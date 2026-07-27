@@ -235,6 +235,22 @@ def health_distribution(healths):
     return counts
 
 
+def priority_distribution(buckets):
+    """Cuenta de proyectos por bucket de prioridad (P0-P3)."""
+    counts = {"P0 - Critica": 0, "P1 - Alta": 0, "P2 - Media": 0, "P3 - Baja": 0}
+    for b in buckets:
+        counts[b] = counts.get(b, 0) + 1
+    return counts
+
+
+def engagement_distribution(engagement_types):
+    """Cuenta de proyectos por tipo de compromiso."""
+    counts = {"Proyecto": 0, "Diagnostico": 0, "Mantenimiento o recurrente": 0}
+    for t in engagement_types:
+        counts[t] = counts.get(t, 0) + 1
+    return counts
+
+
 def workload_by_person(people, all_tasks):
     """Carga de trabajo por persona a partir de TODAS las tareas del
     portafolio (no solo de un proyecto). Reutilizado por /equipo y

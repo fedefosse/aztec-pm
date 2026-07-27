@@ -29,6 +29,24 @@ CURRENCIES = ["USD", "COP"]
 PROJECT_CODE_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
+@app.template_global()
+def filter_link(endpoint, current, **overrides):
+    """Arma una URL que COMBINA los filtros ya activos (`current`, el dict
+    de filtros de la ruta) con los cambios pedidos (`overrides`) — nunca los
+    reemplaza. `overrides[k] = None` quita ese filtro (toggle); cualquier
+    otro valor lo setea. Sin esto, cada link de una tarjeta KPI pisaba el
+    resto de filtros activos en vez de sumarse (ej. click en "Bloqueados"
+    con un responsable ya filtrado hacía perder el filtro de responsable).
+    """
+    params = {k: v for k, v in current.items() if v}
+    for key, value in overrides.items():
+        if value is None:
+            params.pop(key, None)
+        else:
+            params[key] = value
+    return url_for(endpoint, **params)
+
+
 def validate_project_form(data, conn, is_new):
     """Valida los campos de un formulario de proyecto ya recortado (strip).
 
@@ -99,78 +117,63 @@ def build_row(conn, project, today):
     return {"project": project, "tasks": tasks, "diag": diag}
 
 
-def compute_summary(rows):
+def read_filters(args):
+    """Filtros compartidos por / (ejecutivo) y /proyectos (tabla). `q`
+    (búsqueda de texto) se maneja aparte, solo en /proyectos — no es un
+    facet de tarjeta, es una caja de búsqueda."""
     return {
-        "total": len(rows),
-        "bloqueados": sum(1 for r in rows if r["diag"]["health"] == "Bloqueado"),
-        "en_riesgo": sum(1 for r in rows if r["diag"]["health"] == "En riesgo"),
-        "sin_paso": sum(1 for r in rows if r["diag"]["no_clear_next_step"]),
-        "huerfanos": sum(1 for r in rows if r["diag"]["operationally_orphaned"]),
-        "p0": sum(1 for r in rows if r["diag"]["priority_bucket"] == "P0 - Critica"),
+        "health": args.get("health", ""),
+        "bucket": args.get("bucket", ""),
+        "owner": args.get("owner", ""),
+        "engagement_type": args.get("engagement_type", ""),
+        "no_next_step": "1" if args.get("no_next_step", "") == "1" else "",
+        "orphaned": "1" if args.get("orphaned", "") == "1" else "",
+    }
+
+
+def apply_filters(rows, filters, exclude=()):
+    """Filtra `rows` con todos los filtros de `filters`, salvo las claves en
+    `exclude`. Con `exclude` vacío es el filtrado normal (todo combinado,
+    AND). Con una clave excluida sirve para conteos "facetados": cuántas
+    filas habría SI se sumara ese filtro a los demás ya activos — lo que
+    debe mostrar cada tarjeta KPI, no un total global fijo que ignora el
+    resto de la selección.
+    """
+    if filters.get("health") and "health" not in exclude:
+        rows = [r for r in rows if r["diag"]["health"] == filters["health"]]
+    if filters.get("bucket") and "bucket" not in exclude:
+        rows = [r for r in rows if r["diag"]["priority_bucket"] == filters["bucket"]]
+    if filters.get("owner") and "owner" not in exclude:
+        rows = [r for r in rows if r["project"]["owner_alias"] == filters["owner"]]
+    if filters.get("engagement_type") and "engagement_type" not in exclude:
+        rows = [r for r in rows if r["project"]["engagement_type"] == filters["engagement_type"]]
+    if filters.get("no_next_step") and "no_next_step" not in exclude:
+        rows = [r for r in rows if r["diag"]["no_clear_next_step"]]
+    if filters.get("orphaned") and "orphaned" not in exclude:
+        rows = [r for r in rows if r["diag"]["operationally_orphaned"]]
+    return rows
+
+
+def faceted_summary(all_rows, filters):
+    """Conteos de la franja KPI. Cada número respeta el resto de filtros ya
+    activos pero no el suyo propio (`exclude`) — así "Bloqueados" con un
+    responsable ya filtrado muestra los bloqueados DE ESE responsable, no
+    el total global del portafolio."""
+    return {
+        "total": len(apply_filters(all_rows, filters)),
+        "bloqueados": sum(1 for r in apply_filters(all_rows, filters, exclude=("health",)) if r["diag"]["health"] == "Bloqueado"),
+        "en_riesgo": sum(1 for r in apply_filters(all_rows, filters, exclude=("health",)) if r["diag"]["health"] == "En riesgo"),
+        "sin_paso": sum(1 for r in apply_filters(all_rows, filters, exclude=("no_next_step",)) if r["diag"]["no_clear_next_step"]),
+        "huerfanos": sum(1 for r in apply_filters(all_rows, filters, exclude=("orphaned",)) if r["diag"]["operationally_orphaned"]),
+        "p0": sum(1 for r in apply_filters(all_rows, filters, exclude=("bucket",)) if r["diag"]["priority_bucket"] == "P0 - Critica"),
     }
 
 
 @app.route("/")
 def dashboard():
-    conn = get_db()
-    today = date.today()
-    projects = db.list_projects(conn)
-    people = db.list_people(conn)
-
-    all_rows = [build_row(conn, p, today) for p in projects]
-    rows = all_rows
-
-    health_filter = request.args.get("health", "")
-    bucket_filter = request.args.get("bucket", "")
-    owner_filter = request.args.get("owner", "")
-    only_no_next_step = request.args.get("no_next_step", "") == "1"
-    only_orphaned = request.args.get("orphaned", "") == "1"
-    query = request.args.get("q", "").strip().lower()
-
-    if health_filter:
-        rows = [r for r in rows if r["diag"]["health"] == health_filter]
-    if bucket_filter:
-        rows = [r for r in rows if r["diag"]["priority_bucket"] == bucket_filter]
-    if owner_filter:
-        rows = [r for r in rows if r["project"]["owner_alias"] == owner_filter]
-    if only_no_next_step:
-        rows = [r for r in rows if r["diag"]["no_clear_next_step"]]
-    if only_orphaned:
-        rows = [r for r in rows if r["diag"]["operationally_orphaned"]]
-    if query:
-        rows = [
-            r for r in rows
-            if query in (r["project"]["project_name"] or "").lower()
-            or query in (r["project"]["client_alias"] or "").lower()
-            or query in (r["project"]["project_code"] or "").lower()
-        ]
-
-    rows.sort(key=lambda r: r["diag"]["priority_score"], reverse=True)
-
-    summary = compute_summary(all_rows)
-
-    conn.close()
-    return render_template(
-        "dashboard.html",
-        rows=rows,
-        summary=summary,
-        people=people,
-        filters={
-            "health": health_filter,
-            "bucket": bucket_filter,
-            "owner": owner_filter,
-            "no_next_step": only_no_next_step,
-            "orphaned": only_orphaned,
-            "q": request.args.get("q", ""),
-        },
-    )
-
-
-@app.route("/dashboard")
-def executive_dashboard():
-    """Panel ejecutivo: mismo dato que la vista operativa, reorganizado
-    para responder rápido "dónde está el cuello de botella" y "quién
-    necesita ayuda", con la evidencia (no solo la conclusión) a la vista.
+    """Dashboard ejecutivo — carga principal de la app. Todo lo que se ve
+    reacciona a los mismos filtros combinados (health/bucket/owner/
+    engagement_type/no_next_step/orphaned); ver apply_filters/faceted_summary.
     """
     conn = get_db()
     today = date.today()
@@ -179,22 +182,33 @@ def executive_dashboard():
     all_tasks = db.list_tasks(conn)
 
     all_rows = [build_row(conn, p, today) for p in projects]
+    filters = read_filters(request.args)
+    rows = apply_filters(all_rows, filters)
 
-    owner_filter = request.args.get("owner", "")
-    rows = [r for r in all_rows if r["project"]["owner_alias"] == owner_filter] if owner_filter else all_rows
+    summary = faceted_summary(all_rows, filters)
 
-    summary = compute_summary(all_rows)
-    health_dist = risk_engine.health_distribution([r["diag"]["health"] for r in all_rows])
+    health_scope = apply_filters(all_rows, filters, exclude=("health",))
+    health_dist = risk_engine.health_distribution([r["diag"]["health"] for r in health_scope])
+
+    bucket_scope = apply_filters(all_rows, filters, exclude=("bucket",))
+    bucket_dist = risk_engine.priority_distribution([r["diag"]["priority_bucket"] for r in bucket_scope])
+
+    engagement_scope = apply_filters(all_rows, filters, exclude=("engagement_type",))
+    engagement_dist = risk_engine.engagement_distribution([r["project"]["engagement_type"] for r in engagement_scope])
 
     top_risk = sorted(rows, key=lambda r: r["diag"]["priority_score"], reverse=True)[:8]
 
-    scoped_people = [p for p in people if p["member_alias"] == owner_filter] if owner_filter else people
-    workload_rows, blocking_map = risk_engine.workload_by_person(scoped_people, all_tasks)
+    filtered_codes = {r["project"]["project_code"] for r in rows}
+    filtered_tasks = [t for t in all_tasks if t["project_code"] in filtered_codes]
+    filtered_projects = [r["project"] for r in rows]
+
+    scoped_people = [p for p in people if p["member_alias"] == filters["owner"]] if filters["owner"] else people
+    workload_rows, blocking_map = risk_engine.workload_by_person(scoped_people, filtered_tasks)
     max_open = max((r["open_count"] for r in workload_rows), default=0) or 1
 
-    hygiene_stats = risk_engine.hygiene_stats_by_person(scoped_people, projects, all_tasks, today)
+    hygiene_stats = risk_engine.hygiene_stats_by_person(scoped_people, filtered_projects, filtered_tasks, today)
 
-    task_by_code = {t["task_code"]: t for t in all_tasks}
+    task_by_code = {t["task_code"]: t for t in filtered_tasks}
     blocking_ranked = sorted(blocking_map.items(), key=lambda kv: len(kv[1]), reverse=True)
     top_blockers = [
         {"task": task_by_code[code], "blocks": titles}
@@ -203,31 +217,88 @@ def executive_dashboard():
 
     conn.close()
     return render_template(
-        "executive_dashboard.html",
+        "dashboard.html",
         summary=summary,
         health_dist=health_dist,
         health_total=sum(health_dist.values()) or 1,
+        bucket_dist=bucket_dist,
+        bucket_total=sum(bucket_dist.values()) or 1,
+        engagement_dist=engagement_dist,
+        engagement_total=sum(engagement_dist.values()) or 1,
         top_risk=top_risk,
         workload_rows=workload_rows,
         max_open=max_open,
         hygiene_stats=hygiene_stats,
         top_blockers=top_blockers,
         total_projects=len(all_rows),
+        matched_count=len(rows),
         people=people,
-        filters={"owner": owner_filter},
+        filters=filters,
+    )
+
+
+@app.route("/proyectos")
+def operational_view():
+    conn = get_db()
+    today = date.today()
+    projects = db.list_projects(conn)
+    people = db.list_people(conn)
+
+    all_rows = [build_row(conn, p, today) for p in projects]
+    filters = read_filters(request.args)
+    filters["q"] = request.args.get("q", "").strip()
+
+    rows = apply_filters(all_rows, filters)
+    if filters["q"]:
+        q = filters["q"].lower()
+        rows = [
+            r for r in rows
+            if q in (r["project"]["project_name"] or "").lower()
+            or q in (r["project"]["client_alias"] or "").lower()
+            or q in (r["project"]["project_code"] or "").lower()
+        ]
+
+    rows.sort(key=lambda r: r["diag"]["priority_score"], reverse=True)
+
+    summary = faceted_summary(all_rows, filters)
+
+    conn.close()
+    return render_template(
+        "operational_view.html",
+        rows=rows,
+        summary=summary,
+        people=people,
+        engagement_types=ENGAGEMENT_TYPES,
+        filters=filters,
     )
 
 
 @app.route("/equipo")
 def team_view():
+    """Layout sidebar + detalle: la lista de personas (con su carga a
+    simple vista, para comparar entre operadores sin abrir a cada uno) va
+    a la izquierda; el flujo completo de la persona elegida va a la
+    derecha. Sin selección explícita, se abre por defecto quien tiene más
+    carga — es quien más probablemente hay que revisar primero.
+    """
     conn = get_db()
     people = db.list_people(conn)
     all_tasks = db.list_tasks(conn)
-    rows, blocking_map = risk_engine.workload_by_person(people, all_tasks)
 
-    max_open = max((r["open_count"] for r in rows), default=0) or 1
+    sidebar_rows, blocking_map = risk_engine.workload_by_person(people, all_tasks)
+    max_open = max((r["open_count"] for r in sidebar_rows), default=0) or 1
+
+    owner_filter = request.args.get("owner", "")
+    if owner_filter:
+        selected = next((r for r in sidebar_rows if r["person"]["member_alias"] == owner_filter), None)
+    else:
+        selected = sidebar_rows[0] if sidebar_rows else None
+
     conn.close()
-    return render_template("team.html", rows=rows, max_open=max_open, blocking_map=blocking_map)
+    return render_template(
+        "team.html", sidebar_rows=sidebar_rows, selected=selected, max_open=max_open,
+        blocking_map=blocking_map, filters={"owner": owner_filter},
+    )
 
 
 def render_project_form(project, people, errors, is_edit):
@@ -382,7 +453,7 @@ def project_delete(project_code):
     conn = get_db()
     db.delete_project(conn, project_code)
     conn.close()
-    return redirect(url_for("dashboard"))
+    return redirect(url_for("operational_view"))
 
 
 @app.route("/proyectos/<project_code>/notas", methods=["POST"])

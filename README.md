@@ -25,7 +25,7 @@ python3 execution/import_dataset.py    # crea execution/aztec_pm.db desde seed_d
 python3 execution/webapp.py            # levanta el servidor en http://127.0.0.1:5050
 ```
 
-Abre `http://127.0.0.1:5050` — ahí está la vista operativa con los 22 proyectos reales del dataset de Aztec más 5 proyectos sintéticos de ejemplo (ver más abajo por qué). El dashboard ejecutivo está en `http://127.0.0.1:5050/dashboard`.
+Abre `http://127.0.0.1:5050` — esa es la carga principal: el **dashboard ejecutivo**, con los 22 proyectos reales del dataset de Aztec más 5 proyectos sintéticos de ejemplo (ver más abajo por qué). La tabla operativa (para editar proyecto por proyecto) está en `http://127.0.0.1:5050/proyectos`.
 
 `import_dataset.py` reinicializa la base de datos por completo cada vez que se corre (útil en desarrollo/demo; ver advertencia en la directiva sobre no correrlo en producción sobre datos vivos).
 
@@ -34,6 +34,15 @@ Por defecto el servidor corre sin el debugger de Flask (no es seguro dejarlo act
 ```bash
 AZTEC_PM_DEBUG=1 python3 execution/webapp.py
 ```
+
+### Rutas principales
+
+| Ruta | Qué es |
+|---|---|
+| `/` | Dashboard ejecutivo — carga principal |
+| `/proyectos` | Vista operativa (tabla, para crear/editar/filtrar proyecto por proyecto) |
+| `/equipo` | Carga por persona (sidebar + detalle) |
+| `/proyectos/<código>` | Detalle de un proyecto |
 
 ### Cómo correr las pruebas
 
@@ -69,7 +78,7 @@ Cada proyecto recibe un **Índice de Tensión de 0–100**, calculado en `execut
 
 El score se traduce en buckets **P0 (crítica) / P1 (alta) / P2 (media) / P3 (baja)**. Es una fórmula fija y explicable, no una preferencia subjetiva — cualquiera puede leer `risk_engine.py` y saber exactamente por qué un proyecto quedó en P0.
 
-La vista operativa (`/`) ordena por este índice de mayor a menor por defecto, y permite filtrar por salud, prioridad, responsable, "sin siguiente paso" y "activos sin tareas abiertas".
+La vista operativa (`/proyectos`) ordena por este índice de mayor a menor por defecto, y permite filtrar por salud, prioridad, responsable, tipo de compromiso, "sin siguiente paso" y "activos sin tareas abiertas" — todos combinables entre sí.
 
 ## Qué detecta el sistema automáticamente
 
@@ -90,25 +99,27 @@ print(p['health'], p['priority_score'], p['priority_bucket'], p['priority_comput
 "
 ```
 
-## Dashboard ejecutivo (`/dashboard`)
+## Dashboard ejecutivo (`/`) — la carga principal
 
-Página aparte de la vista operativa, pensada para responder rápido — con evidencia clickeable, no solo un número suelto:
+Es lo primero que se ve al abrir la app. Pensado para responder rápido — con evidencia clickeable hasta el proyecto/tarea de origen, no solo un número suelto:
 
-- **Salud del portafolio**: donut (Bloqueado/En riesgo/Sano), cada gajo lleva a esos proyectos filtrados en `/`.
-- **Top proyectos en riesgo**: ranking por Índice de Tensión.
+- **Salud del portafolio**: donut (Bloqueado/En riesgo/Sano).
+- **Distribución de prioridad**: barras por bucket del Índice de Tensión (P0–P3).
+- **Distribución por tipo de compromiso**: Proyecto / Diagnóstico / Mantenimiento — composición del trabajo.
+- **Top proyectos en riesgo**: ranking por Índice de Tensión, dentro de la selección actual.
 - **Carga por persona**: quién tiene más atraso relativo al resto del equipo (misma función que `/equipo`, reutilizada, no una copia).
 - **Evidencia — higiene operativa**: por persona, % de sus proyectos con siguiente paso definido vs. % de sus tareas abiertas vencidas, mostradas por separado (no mezcladas en un solo índice) para poder distinguir "tiene un buen proceso" de "le tocó una carga más fácil", con una nota de metodología visible en la página.
 - **Tareas que están frenando a otras**: ranking de "efecto dominó".
 
-Tiene un filtro por responsable ("Enfocar en: ...") que reduce las cinco secciones a una sola persona a la vez, y aplica al instante (ver abajo).
+**Todos los filtros son combinables, no excluyentes.** Elegir "Bloqueados" y después un responsable no pierde el primer filtro — se suman (`?health=Bloqueado&owner=...`), y las siete secciones de la página reaccionan juntas a la selección completa. Las tarjetas KPI muestran conteos **facetados**: si ya filtraste por un responsable, la tarjeta "Bloqueados" muestra cuántos de *sus* proyectos están bloqueados, no el total del portafolio completo — así cada número responde "si sumo esto a lo que ya elegí, cuántos me quedan", en vez de un total fijo que ignora el resto de la selección. Volver a hacer click sobre un filtro ya activo lo quita (toggle).
 
 ## Filtros instantáneos, sin recargar la página
 
-Los filtros de `/` y `/dashboard` aplican al instante: un único script vanilla (`static/live-filters.js`, sin frameworks ni build step) intercepta el formulario y los links de las tarjetas KPI, pide la misma URL con la nueva query string, y reemplaza solo los bloques necesarios del DOM con lo que el servidor devolvió. Si JS falla o está desactivado, los filtros se degradan a un GET normal (recarga completa) — siguen funcionando igual, solo sin la parte instantánea.
+Los filtros de `/`, `/proyectos` y `/equipo` aplican al instante: un único script vanilla (`static/live-filters.js`, sin frameworks ni build step) intercepta el formulario y los links de las tarjetas/gajos/barras, pide la misma URL con la nueva query string combinada, y reemplaza solo los bloques necesarios del DOM con lo que el servidor devolvió. Si JS falla o está desactivado, los filtros se degradan a un GET normal (recarga completa) — siguen funcionando igual, solo sin la parte instantánea.
 
 ## Vista de equipo (`/equipo`)
 
-Carga operativa por persona, calculada en vivo desde las tareas (no desde los contadores estáticos de `seed_data/team.csv`, para que nunca queden desactualizados): tareas abiertas, bloqueadas y de prioridad alta/crítica por responsable.
+Layout tipo bandeja de correo: una barra lateral con **todas las personas y su carga a simple vista** (abiertas/bloqueadas/alta-crítica, con un buscador para filtrar la lista por nombre) para poder comparar entre operadores sin tener que abrir a cada uno; al hacer click en una persona, el panel principal muestra su flujo completo de tareas. Sin selección explícita, se abre por defecto quien tiene más carga — es quien más probablemente hay que revisar primero. Carga operativa calculada en vivo desde las tareas (no desde los contadores estáticos de `seed_data/team.csv`, para que nunca queden desactualizados).
 
 Dentro de la cola de cada persona, las tareas de las que **dependen otras tareas abiertas** flotan al inicio ("efecto dominó" — si no avanzan, frenan trabajo de alguien más), con una etiqueta de a cuántas tareas bloquean. Importante: el campo `dependency` de una tarea guarda su **prerrequisito** (el título de la tarea de la que depende), no algo que ella misma bloquee — es fácil leerlo al revés. `execution/risk_engine.py::compute_blocking_map` invierte la relación correctamente (ver también el mismo indicador en el detalle de cada proyecto).
 

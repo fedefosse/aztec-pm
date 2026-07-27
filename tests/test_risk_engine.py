@@ -248,6 +248,21 @@ class TestHealthDistribution(unittest.TestCase):
         )
 
 
+class TestPriorityAndEngagementDistribution(unittest.TestCase):
+    def test_priority_distribution_cuenta_por_bucket(self):
+        dist = risk_engine.priority_distribution(["P0 - Critica", "P0 - Critica", "P2 - Media"])
+        self.assertEqual(dist["P0 - Critica"], 2)
+        self.assertEqual(dist["P2 - Media"], 1)
+        self.assertEqual(dist["P1 - Alta"], 0)
+        self.assertEqual(dist["P3 - Baja"], 0)
+
+    def test_engagement_distribution_cuenta_por_tipo(self):
+        dist = risk_engine.engagement_distribution(["Proyecto", "Proyecto", "Diagnostico"])
+        self.assertEqual(dist["Proyecto"], 2)
+        self.assertEqual(dist["Diagnostico"], 1)
+        self.assertEqual(dist["Mantenimiento o recurrente"], 0)
+
+
 def make_person(alias, role="Delivery"):
     return {"member_alias": alias, "role": role}
 

@@ -11,6 +11,22 @@
 // Degradación elegante: si JS falla o está desactivado, el formulario
 // sigue funcionando como un GET normal (botón "Filtrar" + recarga).
 (function () {
+  // Buscador de la barra lateral en /equipo — filtra por nombre en el
+  // cliente, sin ir al servidor (no hay razón para un roster de pocas
+  // personas). Vive fuera del guard de `#dash-filters` porque debe
+  // funcionar igual aunque esa página en particular no use el resto del
+  // mecanismo de filtrado instantáneo.
+  const teamSearch = document.getElementById("team-search");
+  function filterTeamSidebar() {
+    if (!teamSearch) return;
+    const q = teamSearch.value.trim().toLowerCase();
+    document.querySelectorAll("#team-side-list .team-side-item").forEach(function (item) {
+      const name = item.dataset.name || "";
+      item.style.display = !q || name.includes(q) ? "" : "none";
+    });
+  }
+  if (teamSearch) teamSearch.addEventListener("input", filterTeamSidebar);
+
   const form = document.getElementById("dash-filters");
   if (!form) return;
 
@@ -43,6 +59,7 @@
         const current = document.getElementById(id);
         if (fresh && current) current.innerHTML = fresh.innerHTML;
       });
+      filterTeamSidebar(); // reaplicar la búsqueda si el sidebar se acaba de reemplazar
 
       if (pushHistory) history.pushState({ liveFilter: true }, "", url);
       if (status) status.textContent = "";
@@ -65,7 +82,7 @@
     });
   });
 
-  const textInput = form.querySelector("input[type=text]");
+  const textInput = form.querySelector("input[type=text]:not(#team-search)");
   if (textInput) {
     textInput.addEventListener("input", function () {
       clearTimeout(debounceTimer);

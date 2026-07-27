@@ -185,8 +185,13 @@ table.ops-table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
 .legend-item .legend-count { margin-left: auto; font-weight: 600; }
 
 .rank-list { display: flex; flex-direction: column; gap: 10px; }
-.rank-row { display: block; text-decoration: none; color: inherit; }
-.rank-row:hover { text-decoration: none; }
+.rank-row {
+  display: block; text-decoration: none; color: inherit;
+  padding: 6px 8px; border-radius: 6px; border: 1px solid transparent;
+}
+.rank-row:hover { text-decoration: none; background: rgba(255,255,255,0.04); }
+.rank-row.stat-active { border-color: var(--accent); background: rgba(91, 140, 255, 0.08); }
+.legend-item.stat-active { border: 1px solid var(--accent); }
 .rank-row-head { display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 4px; }
 .rank-row-head .muted { font-size: 0.78rem; }
 .rank-bar-track { background: var(--border); border-radius: 999px; height: 7px; overflow: hidden; }
@@ -221,3 +226,29 @@ table.ops-table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
   padding: 6px 10px; border-radius: 6px;
 }
 .filter-status { font-size: 0.8rem; }
+
+/* --- /equipo: sidebar + detalle --- */
+
+.team-layout { display: flex; gap: 20px; align-items: flex-start; }
+.team-sidebar { width: 260px; flex-shrink: 0; }
+.team-search {
+  width: 100%; box-sizing: border-box; margin-bottom: 10px;
+  background: var(--panel); border: 1px solid var(--border); color: var(--text);
+  padding: 8px 10px; border-radius: 6px; font-size: 0.85rem;
+}
+.team-side-item {
+  display: block; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--panel); text-decoration: none; color: inherit; margin-bottom: 8px;
+}
+.team-side-item:hover { border-color: var(--accent); text-decoration: none; }
+.team-side-item.active { border-color: var(--accent); background: rgba(91, 140, 255, 0.1); }
+.team-side-name { font-weight: 600; font-size: 0.92rem; }
+.team-side-role { font-size: 0.72rem; margin: 1px 0 6px; }
+.team-side-meta { display: flex; gap: 8px; flex-wrap: wrap; font-size: 0.72rem; color: var(--muted); margin-bottom: 6px; }
+.team-side-meta .count-danger, .team-side-meta .count-warn { font-weight: 600; }
+.team-main { flex: 1; min-width: 0; }
+
+@media (max-width: 720px) {
+  .team-layout { flex-direction: column; }
+  .team-sidebar { width: 100%; }
+}

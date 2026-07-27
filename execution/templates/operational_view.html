@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block title %}Vista operativa · Aztec PM{% endblock %}
+{% block content %}
+
+<section class="summary-strip" id="dash-summary">
+  <a data-live-link class="stat {{ 'stat-active' if not filters.health and not filters.bucket and not filters.owner and not filters.engagement_type and not filters.no_next_step and not filters.orphaned else '' }}" href="{{ url_for('operational_view') }}">
+    <span class="stat-n">{{ summary.total }}</span><span class="stat-l">Proyectos en esta vista</span>
+  </a>
+  <a data-live-link class="stat stat-blocked {{ 'stat-active' if filters.health == 'Bloqueado' else '' }}" href="{{ filter_link('operational_view', filters, health=(None if filters.health == 'Bloqueado' else 'Bloqueado')) }}">
+    <span class="stat-n">{{ summary.bloqueados }}</span><span class="stat-l">Bloqueados</span>
+  </a>
+  <a data-live-link class="stat stat-risk {{ 'stat-active' if filters.health == 'En riesgo' else '' }}" href="{{ filter_link('operational_view', filters, health=(None if filters.health == 'En riesgo' else 'En riesgo')) }}">
+    <span class="stat-n">{{ summary.en_riesgo }}</span><span class="stat-l">En riesgo</span>
+  </a>
+  <a data-live-link class="stat stat-warn {{ 'stat-active' if filters.no_next_step else '' }}" href="{{ filter_link('operational_view', filters, no_next_step=(None if filters.no_next_step else '1')) }}">
+    <span class="stat-n">{{ summary.sin_paso }}</span><span class="stat-l">Sin siguiente paso</span>
+  </a>
+  <a data-live-link class="stat stat-warn {{ 'stat-active' if filters.orphaned else '' }}" href="{{ filter_link('operational_view', filters, orphaned=(None if filters.orphaned else '1')) }}">
+    <span class="stat-n">{{ summary.huerfanos }}</span><span class="stat-l">Activos sin tareas abiertas</span>
+  </a>
+  <a data-live-link class="stat stat-p0 {{ 'stat-active' if filters.bucket == 'P0 - Critica' else '' }}" href="{{ filter_link('operational_view', filters, bucket=(None if filters.bucket == 'P0 - Critica' else 'P0 - Critica')) }}">
+    <span class="stat-n">{{ summary.p0 }}</span><span class="stat-l">Prioridad P0</span>
+  </a>
+</section>
+<p class="muted" style="margin-top:-8px">Cada tarjeta se combina con el resto de filtros activos (el número que ves es "cuántos habría si además sumo esto"), no un total fijo.</p>
+
+<form class="filters" method="get" id="dash-filters" data-live-target="dash-summary,dash-results">
+  <input type="text" name="q" placeholder="Buscar por proyecto, cliente o código..." value="{{ filters.q }}">
+
+  <select name="health">
+    <option value="">Salud: todas</option>
+    <option value="Bloqueado" {% if filters.health == 'Bloqueado' %}selected{% endif %}>Bloqueado</option>
+    <option value="En riesgo" {% if filters.health == 'En riesgo' %}selected{% endif %}>En riesgo</option>
+    <option value="Sano" {% if filters.health == 'Sano' %}selected{% endif %}>Sano</option>
+  </select>
+
+  <select name="bucket">
+    <option value="">Prioridad: todas</option>
+    <option value="P0 - Critica" {% if filters.bucket == 'P0 - Critica' %}selected{% endif %}>P0 - Crítica</option>
+    <option value="P1 - Alta" {% if filters.bucket == 'P1 - Alta' %}selected{% endif %}>P1 - Alta</option>
+    <option value="P2 - Media" {% if filters.bucket == 'P2 - Media' %}selected{% endif %}>P2 - Media</option>
+    <option value="P3 - Baja" {% if filters.bucket == 'P3 - Baja' %}selected{% endif %}>P3 - Baja</option>
+  </select>
+
+  <select name="owner">
+    <option value="">Responsable: todos</option>
+    {% for person in people %}
+    <option value="{{ person.member_alias }}" {% if filters.owner == person.member_alias %}selected{% endif %}>{{ person.member_alias }}</option>
+    {% endfor %}
+  </select>
+
+  <select name="engagement_type">
+    <option value="">Tipo: todos</option>
+    {% for et in engagement_types %}
+    <option value="{{ et }}" {% if filters.engagement_type == et %}selected{% endif %}>{{ et }}</option>
+    {% endfor %}
+  </select>
+
+  <label class="checkbox-label">
+    <input type="checkbox" name="no_next_step" value="1" {% if filters.no_next_step %}checked{% endif %}>
+    Solo sin siguiente paso
+  </label>
+
+  <label class="checkbox-label">
+    <input type="checkbox" name="orphaned" value="1" {% if filters.orphaned %}checked{% endif %}>
+    Solo activos sin tareas abiertas
+  </label>
+
+  <button type="submit" class="btn">Filtrar</button>
+  <a data-live-link class="btn btn-ghost" href="{{ url_for('operational_view') }}">Limpiar</a>
+  <span class="filter-status muted" id="dash-filter-status" aria-live="polite"></span>
+</form>
+
+<table class="ops-table" id="dash-results">
+  <thead>
+    <tr>
+      <th>Prioridad</th>
+      <th>Proyecto</th>
+      <th>Cliente</th>
+      <th>Responsable</th>
+      <th>Salud</th>
+      <th>Fecha límite</th>
+      <th>Siguiente paso</th>
+      <th>Bloqueos</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+    {% set p = row.project %}
+    {% set d = row.diag %}
+    <tr class="{% if d.health == 'Bloqueado' %}row-blocked{% elif d.health == 'En riesgo' %}row-risk{% endif %}">
+      <td>
+        <span class="badge badge-priority-{{ d.priority_bucket[:2] }}">{{ d.priority_bucket }}</span>
+        <div class="score">Índice de Tensión: {{ d.priority_score }}/100</div>
+      </td>
+      <td>
+        <a href="{{ url_for('project_detail', project_code=p.project_code) }}"><strong>{{ p.project_name }}</strong></a>
+        <div class="muted">{{ p.project_code }} · {{ p.engagement_type }}</div>
+      </td>
+      <td>{{ p.client_alias }}</td>
+      <td>{{ p.owner_alias or '—' }}</td>
+      <td>
+        <span class="badge badge-health-{{ d.health|replace(' ', '-') }}">{{ d.health }}</span>
+        {% if p.status != 'Activo' %}<div class="muted">{{ p.status }}</div>{% endif %}
+      </td>
+      <td>{{ p.target_date or '—' }}</td>
+      <td>
+        {% if d.no_clear_next_step %}
+          <span class="badge badge-warn">Sin definir</span>
+        {% else %}
+          {{ p.next_step }}
+        {% endif %}
+        {% if d.operationally_orphaned %}
+          <div><span class="badge badge-warn">Sin tareas abiertas</span></div>
+        {% endif %}
+      </td>
+      <td class="truncate" title="{{ p.blockers }}">{{ p.blockers or '—' }}</td>
+      <td><a class="btn btn-ghost" href="{{ url_for('project_detail', project_code=p.project_code) }}">Ver</a></td>
+    </tr>
+    {% else %}
+    <tr><td colspan="9" class="muted">No hay proyectos que coincidan con el filtro.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='live-filters.js') }}"></script>{% endblock %}

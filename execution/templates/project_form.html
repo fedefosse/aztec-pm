@@ -2,7 +2,7 @@
 {% block title %}{{ 'Editar' if is_edit else 'Nuevo' }} proyecto · Aztec PM{% endblock %}
 {% block content %}
 
-<a class="back-link" href="{{ url_for('dashboard') }}">&larr; Volver a la vista operativa</a>
+<a class="back-link" href="{{ url_for('operational_view') }}">&larr; Volver a la vista operativa</a>
 <h1>{{ 'Editar proyecto' if is_edit else 'Nuevo proyecto' }}</h1>
 
 {% if errors %}
@@ -105,7 +105,7 @@
 
   <div class="span-2 form-actions">
     <button type="submit" class="btn btn-primary">Guardar proyecto</button>
-    <a class="btn btn-ghost" href="{{ url_for('dashboard') }}">Cancelar</a>
+    <a class="btn btn-ghost" href="{{ url_for('operational_view') }}">Cancelar</a>
   </div>
 </form>
 

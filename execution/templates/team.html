@@ -2,58 +2,91 @@
 {% block title %}Carga del equipo · Aztec PM{% endblock %}
 {% block content %}
 
-<a class="back-link" href="{{ url_for('dashboard') }}">&larr; Volver a la vista operativa</a>
+<a class="back-link" href="{{ url_for('operational_view') }}">&larr; Volver a la vista operativa</a>
 <h1>Carga operativa del equipo</h1>
-<p class="muted">Calculado en vivo a partir de las tareas abiertas asignadas. Las tareas de las que dependen otras tareas (efecto dominó — si no avanzan, frenan trabajo de alguien más) flotan al inicio de la lista de cada persona.</p>
+<p class="muted">Elegí un responsable a la izquierda para ver su flujo completo. Calculado en vivo desde las tareas abiertas — las que frenan a otras ("efecto dominó") flotan al inicio de cada lista.</p>
 
-{% for row in rows %}
-{% set p = row.person %}
-<section class="card" id="{{ p.member_alias|replace(' ', '-') }}">
-  <div class="team-header">
-    <div>
-      <h3 class="tight-heading">{{ p.member_alias }}</h3>
-      <div class="muted">{{ p.role }}</div>
-    </div>
-    <div class="team-counts">
-      <span>{{ row.open_count }} abiertas</span>
-      <span class="{{ 'count-danger' if row.blocked_count else 'muted' }}">{{ row.blocked_count }} bloqueadas</span>
-      <span class="{{ 'count-warn' if row.critical_count else 'muted' }}">{{ row.critical_count }} alta/crítica</span>
-    </div>
-  </div>
-  <div class="load-bar-track">
-    <div class="load-bar-fill" style="width: {{ (row.open_count / max_open * 100) | round(1) }}%;"></div>
-  </div>
-
-  {% if row.tasks %}
-  <table class="ops-table table-spaced">
-    <thead>
-      <tr><th>Tarea</th><th>Proyecto</th><th>Prioridad</th><th>Estado</th><th>Fecha límite</th><th>Bloquea a</th></tr>
-    </thead>
-    <tbody>
-      {% for t in row.tasks %}
-      {% set blocks = blocking_map.get(t.task_code, []) %}
-      <tr class="{% if blocks %}row-risk{% endif %}">
-        <td><a href="{{ url_for('project_detail', project_code=t.project_code) }}">{{ t.title }}</a></td>
-        <td class="muted">{{ t.project_code }}</td>
-        <td>{{ t.priority }}</td>
-        <td>{{ t.status }}</td>
-        <td>{{ t.due_date or '—' }}</td>
-        <td>
-          {% if blocks %}
-            <span class="badge badge-warn">{{ blocks|length }} tarea{{ 's' if blocks|length > 1 else '' }}</span>
-            <div class="muted">{{ blocks|join(', ') }}</div>
-          {% else %}
-            <span class="muted">—</span>
-          {% endif %}
-        </td>
-      </tr>
+<form id="dash-filters" data-live-target="team-side-list,team-main" style="display:contents">
+<input type="hidden" name="owner" value="{{ filters.owner }}">
+<div class="team-layout">
+  <aside class="team-sidebar">
+    <input type="text" id="team-search" class="team-search" placeholder="Buscar responsable…" autocomplete="off">
+    <div id="team-side-list">
+      {% for row in sidebar_rows %}
+      <a data-live-link class="team-side-item {{ 'active' if selected and row.person.member_alias == selected.person.member_alias else '' }}"
+         href="{{ url_for('team_view', owner=row.person.member_alias) }}"
+         data-name="{{ row.person.member_alias|lower }}">
+        <div class="team-side-name">{{ row.person.member_alias }}</div>
+        <div class="team-side-role muted">{{ row.person.role }}</div>
+        <div class="team-side-meta">
+          <span>{{ row.open_count }} abiertas</span>
+          {% if row.blocked_count %}<span class="count-danger">{{ row.blocked_count }} bloq.</span>{% endif %}
+          {% if row.critical_count %}<span class="count-warn">{{ row.critical_count }} alta/crít.</span>{% endif %}
+        </div>
+        <div class="load-bar-track"><div class="load-bar-fill" style="width: {{ (row.open_count / max_open * 100)|round(1) }}%;"></div></div>
+      </a>
+      {% else %}
+      <p class="muted">No hay personas registradas.</p>
       {% endfor %}
-    </tbody>
-  </table>
-  {% else %}
-  <p class="muted table-spaced">Sin tareas abiertas asignadas.</p>
-  {% endif %}
-</section>
-{% endfor %}
+    </div>
+  </aside>
+
+  <main class="team-main" id="team-main">
+    {% if selected %}
+    {% set row = selected %}
+    {% set p = row.person %}
+    <section class="card">
+      <div class="team-header">
+        <div>
+          <h2 class="tight-heading">{{ p.member_alias }}</h2>
+          <div class="muted">{{ p.role }}</div>
+        </div>
+        <div class="team-counts">
+          <span>{{ row.open_count }} abiertas</span>
+          <span class="{{ 'count-danger' if row.blocked_count else 'muted' }}">{{ row.blocked_count }} bloqueadas</span>
+          <span class="{{ 'count-warn' if row.critical_count else 'muted' }}">{{ row.critical_count }} alta/crítica</span>
+        </div>
+      </div>
+      <div class="load-bar-track">
+        <div class="load-bar-fill" style="width: {{ (row.open_count / max_open * 100)|round(1) }}%;"></div>
+      </div>
+
+      {% if row.tasks %}
+      <table class="ops-table table-spaced">
+        <thead>
+          <tr><th>Tarea</th><th>Proyecto</th><th>Prioridad</th><th>Estado</th><th>Fecha límite</th><th>Bloquea a</th></tr>
+        </thead>
+        <tbody>
+          {% for t in row.tasks %}
+          {% set blocks = blocking_map.get(t.task_code, []) %}
+          <tr class="{% if blocks %}row-risk{% endif %}">
+            <td><a href="{{ url_for('project_detail', project_code=t.project_code) }}">{{ t.title }}</a></td>
+            <td class="muted">{{ t.project_code }}</td>
+            <td>{{ t.priority }}</td>
+            <td>{{ t.status }}</td>
+            <td>{{ t.due_date or '—' }}</td>
+            <td>
+              {% if blocks %}
+                <span class="badge badge-warn">{{ blocks|length }} tarea{{ 's' if blocks|length > 1 else '' }}</span>
+                <div class="muted">{{ blocks|join(', ') }}</div>
+              {% else %}
+                <span class="muted">—</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="muted table-spaced">Sin tareas abiertas asignadas.</p>
+      {% endif %}
+    </section>
+    {% else %}
+    <p class="muted">Elegí un responsable de la lista para ver su detalle.</p>
+    {% endif %}
+  </main>
+</div>
+</form>
 
 {% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='live-filters.js') }}"></script>{% endblock %}
