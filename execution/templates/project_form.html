@@ -1,25 +1,33 @@
 {% extends "base.html" %}
-{% block title %}{{ 'Editar' if project else 'Nuevo' }} proyecto · Aztec PM{% endblock %}
+{% block title %}{{ 'Editar' if is_edit else 'Nuevo' }} proyecto · Aztec PM{% endblock %}
 {% block content %}
 
 <a class="back-link" href="{{ url_for('dashboard') }}">&larr; Volver a la vista operativa</a>
-<h1>{{ 'Editar proyecto' if project else 'Nuevo proyecto' }}</h1>
+<h1>{{ 'Editar proyecto' if is_edit else 'Nuevo proyecto' }}</h1>
+
+{% if errors %}
+<div class="form-errors" role="alert">
+  <ul>
+    {% for e in errors %}<li>{{ e }}</li>{% endfor %}
+  </ul>
+</div>
+{% endif %}
 
 <form class="form-grid" method="post">
   <label>
     Código de proyecto
     <input type="text" name="project_code" value="{{ project.project_code if project else '' }}"
-           {% if project %}readonly{% endif %} required placeholder="ej. PRJ-23">
+           {% if is_edit %}readonly{% endif %} required placeholder="ej. PRJ-23…" autocomplete="off">
   </label>
 
   <label>
     Cliente
-    <input type="text" name="client_alias" value="{{ project.client_alias if project else '' }}" required>
+    <input type="text" name="client_alias" value="{{ project.client_alias if project else '' }}" required autocomplete="off">
   </label>
 
   <label>
     Nombre del proyecto
-    <input type="text" name="project_name" value="{{ project.project_name if project else '' }}" required>
+    <input type="text" name="project_name" value="{{ project.project_name if project else '' }}" required autocomplete="off">
   </label>
 
   <label>
@@ -52,7 +60,7 @@
 
   <label>
     Etapa
-    <input type="text" name="stage" value="{{ project.stage if project else 'Ejecucion' }}">
+    <input type="text" name="stage" value="{{ project.stage if project else 'Ejecucion' }}" autocomplete="off">
   </label>
 
   <label>
@@ -67,7 +75,7 @@
 
   <label>
     Valor de negocio
-    <input type="number" step="1" name="business_value" value="{{ project.business_value if project else '' }}">
+    <input type="number" step="1" inputmode="decimal" name="business_value" value="{{ project.business_value if project else '' }}">
   </label>
 
   <label>
@@ -82,7 +90,7 @@
   <label class="span-2">
     Siguiente paso
     <input type="text" name="next_step" value="{{ project.next_step if project else '' }}"
-           placeholder="¿Qué hay que hacer a continuación, concretamente?">
+           placeholder="¿Qué hay que hacer a continuación, concretamente?" autocomplete="off">
   </label>
 
   <label class="span-2">

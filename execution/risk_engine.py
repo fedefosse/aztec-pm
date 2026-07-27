@@ -26,10 +26,20 @@ def parse_date(value):
     return None
 
 
-def to_usd(business_value, currency):
-    if business_value is None or business_value == "":
+def parse_float(value):
+    """Intenta convertir a float; nunca lanza. None si no es numérico."""
+    if value is None or value == "":
         return None
-    value = float(business_value)
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def to_usd(business_value, currency):
+    value = parse_float(business_value)
+    if value is None:
+        return None
     if currency == "COP":
         return value * COP_TO_USD
     return value
@@ -161,6 +171,41 @@ def compute_priority(project, tasks, today=None):
         "breakdown": breakdown,
         "health": health,
     }
+
+
+def _title_stem(title):
+    """El dataset arma el título como '{tarea} - {proyecto}'; el campo
+    `dependency` de una tarea guarda ese mismo prefijo, no el proyecto."""
+    return (title or "").split(" - ")[0].strip()
+
+
+def compute_blocking_map(tasks):
+    """Quién bloquea a quién.
+
+    El campo `dependency` de una tarea es su PRERREQUISITO (el título de la
+    tarea de la que depende), no algo que ella misma bloquee — es fácil
+    leerlo al revés. Esta función invierte la relación: para cada tarea,
+    devuelve la lista de títulos de tareas abiertas que dependen de ella
+    (dentro del mismo proyecto; los títulos solo son únicos por proyecto).
+    Una tarea "Hecha" ya no cuenta como dependiente de nadie.
+    """
+    by_project = {}
+    for t in tasks:
+        by_project.setdefault(t["project_code"], []).append(t)
+
+    blocks = {}
+    for project_tasks in by_project.values():
+        title_to_code = {_title_stem(t["title"]): t["task_code"] for t in project_tasks}
+        for t in project_tasks:
+            if t["status"] == "Hecho":
+                continue
+            dep = (t["dependency"] or "").strip()
+            if not dep:
+                continue
+            prereq_code = title_to_code.get(dep)
+            if prereq_code:
+                blocks.setdefault(prereq_code, []).append(t["title"])
+    return blocks
 
 
 def diagnose(project, tasks, today=None):

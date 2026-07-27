@@ -8,7 +8,9 @@ Este proyecto sigue una arquitectura de 3 capas (ver `CLAUDE.md` en esta misma c
 
 - **`directives/gestion_proyectos.md`** — el SOP: modelo de datos, criterio de riesgo y de priorización, en lenguaje natural. **Léelo primero** — ahí está la explicación completa del criterio de priorización.
 - **`execution/`** — código Python determinista: importación de datos, motor de riesgo/prioridad (funciones puras, sin efectos secundarios) y la app web (Flask) que expone todo como CRUD + vista operativa.
+- **`tests/`** — pruebas de `risk_engine.py` y de las funciones puras de `webapp.py` (`unittest` estándar, sin tocar la base de datos).
 - **`seed_data/`** — copia en CSV del dataset original de Aztec (de solo lectura), exportado una vez desde el `.xlsx` compartido.
+- **`CHANGELOG.md`** — historial de decisiones de este prototipo, en orden.
 
 ## Cómo levantarlo
 
@@ -26,6 +28,20 @@ python3 execution/webapp.py            # levanta el servidor en http://127.0.0.1
 Abre `http://127.0.0.1:5050` — ahí está la vista operativa con los 22 proyectos reales del dataset de Aztec más 5 proyectos sintéticos de ejemplo (ver más abajo por qué).
 
 `import_dataset.py` reinicializa la base de datos por completo cada vez que se corre (útil en desarrollo/demo; ver advertencia en la directiva sobre no correrlo en producción sobre datos vivos).
+
+Por defecto el servidor corre sin el debugger de Flask (no es seguro dejarlo activo por defecto en un repo público), y solo escucha en `127.0.0.1`. Las rutas de eliminar no llevan token CSRF — aceptable para un prototipo local de un solo usuario, pero evita navegar sitios no confiables mientras el servidor esté corriendo en la misma máquina. Para desarrollo con recarga automática y depurador interactivo:
+
+```bash
+AZTEC_PM_DEBUG=1 python3 execution/webapp.py
+```
+
+### Cómo correr las pruebas
+
+```bash
+python3 -m unittest discover -s tests
+```
+
+Cubren las funciones puras de `execution/risk_engine.py` (parseo de fechas, conversión de moneda, umbrales de urgencia, reglas de salud, higiene operativa y el mapa de dependencias) y de `execution/webapp.py` (generación de código de tarea sin colisiones), todo sin tocar la base de datos.
 
 ## Ejemplos de proyectos con distintos estados y prioridades
 
@@ -66,17 +82,23 @@ Estos cuatro campos **no se guardan a mano**: se recalculan en cada consulta a p
 
 ## Vista de equipo (`/equipo`)
 
-Carga operativa por persona, calculada en vivo desde las tareas (no desde los contadores estáticos de `seed_data/team.csv`, para que nunca queden desactualizados): tareas abiertas, bloqueadas y de prioridad alta/crítica por responsable. Dentro de la cola de cada persona, las tareas con una `dependency` asociada flotan al inicio — son las que, si no avanzan, bloquean trabajo de alguien más ("efecto dominó").
+Carga operativa por persona, calculada en vivo desde las tareas (no desde los contadores estáticos de `seed_data/team.csv`, para que nunca queden desactualizados): tareas abiertas, bloqueadas y de prioridad alta/crítica por responsable.
+
+Dentro de la cola de cada persona, las tareas de las que **dependen otras tareas abiertas** flotan al inicio ("efecto dominó" — si no avanzan, frenan trabajo de alguien más), con una etiqueta de a cuántas tareas bloquean. Importante: el campo `dependency` de una tarea guarda su **prerrequisito** (el título de la tarea de la que depende), no algo que ella misma bloquee — es fácil leerlo al revés. `execution/risk_engine.py::compute_blocking_map` invierte la relación correctamente (ver también el mismo indicador en el detalle de cada proyecto).
 
 ## Qué dejé fuera a propósito (dado el tiempo del reto)
 
 - **Autenticación/multiusuario**: es un prototipo de un solo usuario/operador; no hay login.
-- **Edición de tareas más allá de estado** (título, prioridad, fecha) desde la UI — se puede vía re-importación o directamente en SQLite; no era crítico para demostrar el criterio de priorización.
+- **Edición de tareas más allá de estado** (título, prioridad, fecha, responsable) desde la UI una vez creadas — el responsable solo se fija al crear la tarea; cambiarlo después requiere re-importar o editar directamente en SQLite. No era crítico para demostrar el criterio de priorización. (Sí se puede crear, cambiar de estado y **eliminar** tareas y proyectos desde la UI.)
 - **Historial de cambios de proyecto** (sí existe para notas, no para el resto de campos) — un log de auditoría completo es razonable en producción, pero no esencial para el prototipo.
 - **Conversión de moneda en vivo**: se usa una tasa fija documentada (`COP_TO_USD = 1/4000`) en vez de una API de tipo de cambio, para mantener el motor de prioridad 100% determinista y sin dependencias externas.
-- **Un campo de prioridad editable a mano**: se decidió que la prioridad sea siempre calculada (no una opinión guardada), para que el criterio de priorización sea consistente en todo el portafolio. Se puede ajustar el peso de sus factores en `risk_engine.py` si el negocio lo requiere.
+- **Un campo de prioridad editable a mano**: se decidió que la prioridad sea siempre calculada, nunca una opinión guardada a mano — así el criterio de priorización queda consistente en todo el portafolio. Esto satisface el requisito de "guardar prioridad" del reto de una forma distinta a un campo editable: la prioridad está siempre disponible y actualizada porque se recalcula en cada consulta, no porque alguien la haya tecleado y pueda quedar desactualizada. Se puede ajustar el peso de sus factores en `risk_engine.py` si el negocio lo requiere.
 - **Stack Next.js/React + mock en JSON + automatización con n8n**: se evaluó como alternativa y se descartó a propósito. Habría significado reescribir un prototipo ya probado end-to-end sin ganar precisión de negocio real, y se aleja de mantener la lógica de riesgo/prioridad en un único lugar determinista y testeable (`risk_engine.py`). Las ideas de negocio de valor de esa alternativa sí se incorporaron sobre el stack actual (ver "Orfandad operativa" y "Vista de equipo" arriba).
 
-## Nota sobre las fechas del dataset importado
+## Notas sobre la calidad de los datos importados
 
-El dataset de Aztec fue generado con una fecha de referencia interna distinta a la fecha real del sistema al momento de esta entrega. Por eso, varios de los 22 proyectos reales aparecerán como vencidos/en riesgo apenas se importan — es un efecto esperado de comparar datos históricos contra "hoy" real, no un error del motor. El detalle completo está documentado en `directives/gestion_proyectos.md`.
+- **Fechas**: el dataset de Aztec fue generado con una fecha de referencia interna distinta a la fecha real del sistema al momento de esta entrega. Por eso, varios de los 22 proyectos reales aparecerán como vencidos/en riesgo apenas se importan — es un efecto esperado de comparar datos históricos contra "hoy" real, no un error del motor.
+- **Moneda mixta**: dos proyectos (`PRJ-18`, `PRJ-20`) vienen en COP con montos ~4000x mayores que el resto (en USD); se normalizan con una tasa fija documentada antes de calcular impacto.
+- **El campo `dependency` de las tareas estaba invertido en mi primera lectura**: no es "esto bloquea a otros", es "esto depende de otra tarea" — el texto es el título de su prerrequisito dentro del mismo proyecto. `compute_blocking_map` en `risk_engine.py` invierte la relación para encontrar qué tareas son en realidad el cuello de botella (de las que depende más de una tarea abierta).
+
+El detalle completo de estos tres puntos está documentado en `directives/gestion_proyectos.md` y en el registro de aprendizajes del `CLAUDE.md` raíz del reto.

@@ -12,6 +12,12 @@
 
 * { box-sizing: border-box; }
 
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
 body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -39,6 +45,10 @@ a:hover { text-decoration: underline; }
 .team-counts { display: flex; gap: 14px; font-size: 0.85rem; color: var(--muted); }
 .load-bar-track { background: var(--border); border-radius: 999px; height: 8px; margin-top: 10px; overflow: hidden; }
 .load-bar-fill { background: var(--accent); height: 100%; border-radius: 999px; }
+.count-danger { color: var(--red); }
+.count-warn { color: var(--amber); }
+.tight-heading { margin-bottom: 2px; }
+.table-spaced { margin-top: 12px; }
 
 .btn {
   display: inline-block; padding: 6px 14px; border-radius: 6px;
@@ -48,6 +58,14 @@ a:hover { text-decoration: underline; }
 .btn:hover { border-color: var(--accent); text-decoration: none; }
 .btn-primary { background: var(--accent); border-color: var(--accent); color: white; }
 .btn-ghost { border-color: transparent; }
+.btn-danger { color: var(--red); border-color: var(--red); }
+.btn-danger:hover { background: rgba(239, 84, 100, 0.12); }
+
+.form-errors {
+  background: rgba(239, 84, 100, 0.1); border: 1px solid var(--red);
+  border-radius: 8px; padding: 10px 16px; margin-bottom: 16px; color: var(--red);
+}
+.form-errors ul { margin: 0; padding-left: 18px; }
 
 .summary-strip {
   display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap;
@@ -101,6 +119,7 @@ table.ops-table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
 .back-link { display: inline-block; margin-bottom: 12px; }
 
 .detail-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; }
+.header-actions { display: flex; gap: 8px; }
 
 .diag-panel { margin-bottom: 20px; }
 .diag-badges { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }

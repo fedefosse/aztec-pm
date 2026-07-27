@@ -9,7 +9,13 @@
     <h1>{{ project.project_name }}</h1>
     <div class="muted">{{ project.project_code }} · {{ project.client_alias }} · {{ project.engagement_type }} · {{ project.stage }}</div>
   </div>
-  <a class="btn btn-primary" href="{{ url_for('project_edit', project_code=project.project_code) }}">Editar proyecto</a>
+  <div class="header-actions">
+    <a class="btn btn-primary" href="{{ url_for('project_edit', project_code=project.project_code) }}">Editar proyecto</a>
+    <form method="post" action="{{ url_for('project_delete', project_code=project.project_code) }}"
+          onsubmit="return confirm('¿Eliminar {{ project.project_name }} y todas sus tareas y notas? Esta acción no se puede deshacer.');">
+      <button type="submit" class="btn btn-danger">Eliminar</button>
+    </form>
+  </div>
 </div>
 
 <section class="diag-panel">
@@ -60,12 +66,13 @@
   <h3>Tareas ({{ diag.open_tasks }} abiertas · {{ diag.overdue_tasks }} vencidas · {{ diag.blocked_tasks }} bloqueadas)</h3>
   <table class="ops-table">
     <thead>
-      <tr><th>Título</th><th>Responsable</th><th>Prioridad</th><th>Estado</th><th>Fecha límite</th><th></th></tr>
+      <tr><th>Título</th><th>Responsable</th><th>Prioridad</th><th>Estado</th><th>Fecha límite</th><th>Bloquea a</th><th></th></tr>
     </thead>
     <tbody>
       {% for t in tasks %}
-      <tr>
-        <td>{{ t.title }}</td>
+      {% set blocks = blocking_map.get(t.task_code, []) %}
+      <tr class="{% if blocks %}row-risk{% endif %}">
+        <td title="{{ t.detail }}">{{ t.title }}</td>
         <td>{{ t.assignee_alias or '—' }}</td>
         <td>{{ t.priority }}</td>
         <td>
@@ -79,10 +86,23 @@
           </form>
         </td>
         <td>{{ t.due_date or '—' }}</td>
-        <td class="muted truncate" title="{{ t.detail }}">{{ t.detail }}</td>
+        <td>
+          {% if blocks %}
+            <span class="badge badge-warn" title="{{ blocks|join(', ') }}">{{ blocks|length }} tarea{{ 's' if blocks|length > 1 else '' }}</span>
+          {% else %}
+            <span class="muted">—</span>
+          {% endif %}
+        </td>
+        <td>
+          <form method="post" action="{{ url_for('task_delete', task_code=t.task_code) }}"
+                onsubmit="return confirm('¿Eliminar esta tarea?');">
+            <input type="hidden" name="project_code" value="{{ project.project_code }}">
+            <button type="submit" class="btn btn-ghost">Eliminar</button>
+          </form>
+        </td>
       </tr>
       {% else %}
-      <tr><td colspan="6" class="muted">Sin tareas registradas.</td></tr>
+      <tr><td colspan="7" class="muted">Sin tareas registradas.</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -92,7 +112,12 @@
     <form method="post" action="{{ url_for('task_new', project_code=project.project_code) }}" class="form-grid">
       <label class="span-2">Título<input type="text" name="title" required></label>
       <label>Responsable
-        <input type="text" name="assignee_alias" placeholder="alias del responsable">
+        <select name="assignee_alias">
+          <option value="">Sin asignar</option>
+          {% for person in people %}
+          <option value="{{ person.member_alias }}">{{ person.member_alias }}</option>
+          {% endfor %}
+        </select>
       </label>
       <label>Prioridad
         <select name="priority">
