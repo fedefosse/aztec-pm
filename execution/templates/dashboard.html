@@ -7,6 +7,7 @@
   <div class="stat stat-blocked"><span class="stat-n">{{ summary.bloqueados }}</span><span class="stat-l">Bloqueados</span></div>
   <div class="stat stat-risk"><span class="stat-n">{{ summary.en_riesgo }}</span><span class="stat-l">En riesgo</span></div>
   <div class="stat stat-warn"><span class="stat-n">{{ summary.sin_paso }}</span><span class="stat-l">Sin siguiente paso</span></div>
+  <div class="stat stat-warn"><span class="stat-n">{{ summary.huerfanos }}</span><span class="stat-l">Activos sin tareas abiertas</span></div>
   <div class="stat stat-p0"><span class="stat-n">{{ summary.p0 }}</span><span class="stat-l">Prioridad P0</span></div>
 </section>
 
@@ -40,6 +41,11 @@
     Solo sin siguiente paso
   </label>
 
+  <label class="checkbox-label">
+    <input type="checkbox" name="orphaned" value="1" {% if filters.orphaned %}checked{% endif %}>
+    Solo activos sin tareas abiertas
+  </label>
+
   <button type="submit" class="btn">Filtrar</button>
   <a class="btn btn-ghost" href="{{ url_for('dashboard') }}">Limpiar</a>
 </form>
@@ -65,7 +71,7 @@
     <tr class="{% if d.health == 'Bloqueado' %}row-blocked{% elif d.health == 'En riesgo' %}row-risk{% endif %}">
       <td>
         <span class="badge badge-priority-{{ d.priority_bucket[:2] }}">{{ d.priority_bucket }}</span>
-        <div class="score">{{ d.priority_score }}/100</div>
+        <div class="score">Índice de Tensión: {{ d.priority_score }}/100</div>
       </td>
       <td>
         <a href="{{ url_for('project_detail', project_code=p.project_code) }}"><strong>{{ p.project_name }}</strong></a>
@@ -83,6 +89,9 @@
           <span class="badge badge-warn">Sin definir</span>
         {% else %}
           {{ p.next_step }}
+        {% endif %}
+        {% if d.operationally_orphaned %}
+          <div><span class="badge badge-warn">Sin tareas abiertas</span></div>
         {% endif %}
       </td>
       <td class="truncate" title="{{ p.blockers }}">{{ p.blockers or '—' }}</td>

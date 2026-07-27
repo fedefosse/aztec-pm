@@ -29,12 +29,13 @@ Un proyecto se marca:
 - **En riesgo** (y no bloqueado) si: `target_date` ya pasó y el proyecto sigue `Activo`, o tiene al menos una tarea abierta vencida (`due_date` < hoy).
 - **Sano**: ninguna de las anteriores.
 - **Sin siguiente paso claro**: `next_step` vacío o en blanco. Esto es independiente de salud/riesgo — un proyecto sano puede igual no tener claridad de qué sigue, y eso es en sí mismo un riesgo operativo (nadie sabe qué hacer mañana).
+- **Orfandad operativa**: el proyecto está `Activo` pero no tiene ninguna tarea abierta. Es una señal distinta de "sin siguiente paso" (que mira el campo de texto): esta mira los hechos — nadie está moviendo el proyecto, tenga o no un siguiente paso anotado. En el dataset de Aztec es rara (1 de 27 proyectos al importar), lo cual es justamente lo que se espera de una alerta crítica: si fuera frecuente, dejaría de ser señal.
 
 La fecha "hoy" usada para estas comparaciones es la fecha real del sistema en el momento de la consulta, no una fecha fija.
 
-## Criterio de priorización
+## Criterio de priorización — Índice de Tensión
 
-Se calcula un **score 0–100** por proyecto, explicable y reproducible (no es una preferencia subjetiva, es una fórmula fija):
+Se calcula un **score 0–100** por proyecto ("Índice de Tensión"), explicable y reproducible (no es una preferencia subjetiva, es una fórmula fija):
 
 | Factor | Regla | Puntos |
 |---|---|---|
@@ -54,6 +55,7 @@ Se calcula un **score 0–100** por proyecto, explicable y reproducible (no es u
 | | `Diagnostico` (define alcance/venta futura) | +5 |
 | | `Mantenimiento o recurrente` (servicio ya estable) | +0 |
 | Higiene operativa | `next_step` vacío | +10 |
+| Orfandad operativa | `Activo` sin ninguna tarea abierta | +15 |
 
 Score final capado en 100. Buckets:
 
@@ -73,7 +75,7 @@ Score final capado en 100. Buckets:
 - `execution/import_dataset.py` — crea/reinicializa `execution/aztec_pm.db` desde `seed_data/*.csv` + siembra ejemplos sintéticos. Idempotente: se puede correr las veces que sea, siempre parte de cero.
 - `execution/risk_engine.py` — funciones puras de cálculo de salud, "sin siguiente paso" y score de prioridad. Sin efectos secundarios; se puede testear con datos sueltos.
 - `execution/db.py` — acceso a SQLite (esquema + queries compartidas).
-- `execution/webapp.py` — servidor Flask: vista operativa (dashboard filtrable) + formularios de alta/edición de proyectos, tareas y notas.
+- `execution/webapp.py` — servidor Flask: vista operativa (dashboard filtrable) + formularios de alta/edición de proyectos, tareas y notas + vista de carga del equipo (`/equipo`, calculada en vivo desde `tasks`, sin duplicar contadores de `team.csv`; las tareas con `dependency` no vacía flotan al inicio de la lista de cada persona — "efecto dominó": son las que bloquean trabajo de otros).
 
 ## Casos extremos conocidos
 
@@ -86,3 +88,4 @@ Score final capado en 100. Buckets:
 
 - 2026-07-27 — el dataset trae `is_overdue` precalculado con una fecha de referencia distinta a la real; el motor de riesgo recalcula siempre contra la fecha real del sistema, no confía en esa columna para nada nuevo.
 - 2026-07-27 — dos proyectos del dataset (PRJ-18, PRJ-20) vienen en COP con montos ~4000x mayores que el resto en USD; sin normalizar por moneda, el score de impacto queda roto para esos dos.
+- 2026-07-27 — se evaluó un plan alternativo (Next.js + JSON + n8n) para el mismo reto. Se descartó el cambio de stack: contradecía el mandato explícito de mantener la ejecución en scripts Python deterministas dentro de `execution/`, y reescribir habría descartado un prototipo ya probado end-to-end sin ganar valor de negocio real. Sí se incorporaron las ideas de negocio de ese plan que no requerían cambiar de stack: la señal de "orfandad operativa" (Activo + 0 tareas abiertas), la vista de carga del equipo, y el "efecto dominó" (tareas con dependencia asociada flotan primero en la cola de cada responsable). Lección: un plan alternativo puede aportar criterio de negocio sin forzar a adoptar su arquitectura.

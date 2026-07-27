@@ -83,6 +83,15 @@ def has_no_clear_next_step(project):
     return not (project["next_step"] or "").strip()
 
 
+def is_operationally_orphaned(project, tasks, today=None):
+    """Activo pero sin ninguna tarea abierta: nadie está moviendo el proyecto."""
+    if project["status"] != "Activo":
+        return False
+    today = today or date.today()
+    buckets = split_tasks(tasks, today)
+    return len(buckets["open"]) == 0
+
+
 def compute_priority(project, tasks, today=None):
     """Score 0-100 + bucket + desglose explicable."""
     today = today or date.today()
@@ -132,6 +141,9 @@ def compute_priority(project, tasks, today=None):
     # Higiene operativa
     breakdown["higiene"] = 10 if has_no_clear_next_step(project) else 0
 
+    # Orfandad operativa: activo pero nadie lo esta moviendo
+    breakdown["orfandad"] = 15 if is_operationally_orphaned(project, tasks, today) else 0
+
     score = min(100, sum(breakdown.values()))
 
     if score >= 70:
@@ -162,6 +174,7 @@ def diagnose(project, tasks, today=None):
         "priority_bucket": priority["bucket"],
         "priority_breakdown": priority["breakdown"],
         "no_clear_next_step": has_no_clear_next_step(project),
+        "operationally_orphaned": is_operationally_orphaned(project, tasks, today),
         "open_tasks": len(buckets["open"]),
         "overdue_tasks": len(buckets["overdue"]),
         "blocked_tasks": len(buckets["blocked"]),

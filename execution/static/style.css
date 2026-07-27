@@ -31,6 +31,14 @@ a:hover { text-decoration: underline; }
 }
 .brand { font-weight: 600; color: var(--text); }
 .brand:hover { text-decoration: none; }
+.topnav { display: flex; align-items: center; gap: 16px; }
+.topnav a:not(.btn) { color: var(--muted); font-size: 0.9rem; }
+.topnav a:not(.btn):hover { color: var(--text); }
+
+.team-header { display: flex; justify-content: space-between; align-items: flex-start; }
+.team-counts { display: flex; gap: 14px; font-size: 0.85rem; color: var(--muted); }
+.load-bar-track { background: var(--border); border-radius: 999px; height: 8px; margin-top: 10px; overflow: hidden; }
+.load-bar-fill { background: var(--accent); height: 100%; border-radius: 999px; }
 
 .btn {
   display: inline-block; padding: 6px 14px; border-radius: 6px;

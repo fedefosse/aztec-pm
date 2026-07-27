@@ -15,12 +15,13 @@
 <section class="diag-panel">
   <div class="diag-badges">
     <span class="badge badge-health-{{ diag.health|replace(' ', '-') }}">{{ diag.health }}</span>
-    <span class="badge badge-priority-{{ diag.priority_bucket[:2] }}">{{ diag.priority_bucket }} · {{ diag.priority_score }}/100</span>
+    <span class="badge badge-priority-{{ diag.priority_bucket[:2] }}">{{ diag.priority_bucket }} · Índice de Tensión {{ diag.priority_score }}/100</span>
     {% if diag.no_clear_next_step %}<span class="badge badge-warn">Sin siguiente paso claro</span>{% endif %}
+    {% if diag.operationally_orphaned %}<span class="badge badge-warn">Activo sin tareas abiertas</span>{% endif %}
     <span class="badge badge-plain">{{ project.status }}</span>
   </div>
   <details class="breakdown">
-    <summary>Ver desglose del score de prioridad</summary>
+    <summary>Ver desglose del Índice de Tensión</summary>
     <ul>
       {% for factor, points in diag.priority_breakdown.items() %}
       <li>{{ factor }}: +{{ points }}</li>

@@ -39,9 +39,9 @@ Los 22 proyectos del dataset de Aztec ya traen variedad real (Sano/En riesgo/Blo
 | `SYN-04` | Sano en salud, pero **sin siguiente paso definido** — muestra que la higiene operativa se detecta independientemente de la salud del proyecto |
 | `SYN-05` | Cerrado, con fecha límite ya vencida — muestra que un proyecto cerrado no se marca en riesgo aunque su fecha haya pasado |
 
-## Criterio de priorización (resumen — detalle completo en `directives/gestion_proyectos.md`)
+## Criterio de priorización — Índice de Tensión (resumen — detalle completo en `directives/gestion_proyectos.md`)
 
-Cada proyecto recibe un **score 0–100**, calculado en `execution/risk_engine.py` a partir de:
+Cada proyecto recibe un **Índice de Tensión de 0–100**, calculado en `execution/risk_engine.py` a partir de:
 
 1. **Urgencia** de la fecha límite (vencida, ≤7 días, ≤30 días, sin fecha, o lejana).
 2. **Impacto de negocio** (valor del proyecto, normalizado a USD).
@@ -49,18 +49,24 @@ Cada proyecto recibe un **score 0–100**, calculado en `execution/risk_engine.p
 4. **Carga crítica** (cantidad de tareas abiertas de prioridad Alta/Crítica).
 5. **Tipo de compromiso** (un `Proyecto` con cliente pesa más que un `Mantenimiento` recurrente).
 6. **Higiene operativa** (+10 si no hay un siguiente paso definido — la falta de claridad es en sí un riesgo).
+7. **Orfandad operativa** (+15 si el proyecto está `Activo` pero no tiene ninguna tarea abierta — nadie lo está moviendo).
 
 El score se traduce en buckets **P0 (crítica) / P1 (alta) / P2 (media) / P3 (baja)**. Es una fórmula fija y explicable, no una preferencia subjetiva — cualquiera puede leer `risk_engine.py` y saber exactamente por qué un proyecto quedó en P0.
 
-La vista operativa (`/`) ordena por este score de mayor a menor por defecto, y permite filtrar por salud, prioridad, responsable y "sin siguiente paso".
+La vista operativa (`/`) ordena por este índice de mayor a menor por defecto, y permite filtrar por salud, prioridad, responsable, "sin siguiente paso" y "activos sin tareas abiertas".
 
 ## Qué detecta el sistema automáticamente
 
 - **Bloqueado**: hay una tarea abierta en estado "Bloqueada", o el campo de bloqueos tiene texto.
 - **En riesgo**: la fecha límite ya pasó (y el proyecto sigue activo), o hay tareas abiertas vencidas.
 - **Sin siguiente paso claro**: el campo "siguiente paso" está vacío — independiente de si el proyecto está sano o no.
+- **Orfandad operativa**: el proyecto está `Activo` pero no tiene ninguna tarea abierta — señal distinta de la anterior porque mira los hechos (tareas), no el texto declarado.
 
-Estos tres campos **no se guardan a mano**: se recalculan en cada consulta a partir de los datos vivos (fechas, bloqueos, tareas), para que nunca queden desincronizados de la realidad.
+Estos cuatro campos **no se guardan a mano**: se recalculan en cada consulta a partir de los datos vivos (fechas, bloqueos, tareas), para que nunca queden desincronizados de la realidad.
+
+## Vista de equipo (`/equipo`)
+
+Carga operativa por persona, calculada en vivo desde las tareas (no desde los contadores estáticos de `seed_data/team.csv`, para que nunca queden desactualizados): tareas abiertas, bloqueadas y de prioridad alta/crítica por responsable. Dentro de la cola de cada persona, las tareas con una `dependency` asociada flotan al inicio — son las que, si no avanzan, bloquean trabajo de alguien más ("efecto dominó").
 
 ## Qué dejé fuera a propósito (dado el tiempo del reto)
 
@@ -69,6 +75,7 @@ Estos tres campos **no se guardan a mano**: se recalculan en cada consulta a par
 - **Historial de cambios de proyecto** (sí existe para notas, no para el resto de campos) — un log de auditoría completo es razonable en producción, pero no esencial para el prototipo.
 - **Conversión de moneda en vivo**: se usa una tasa fija documentada (`COP_TO_USD = 1/4000`) en vez de una API de tipo de cambio, para mantener el motor de prioridad 100% determinista y sin dependencias externas.
 - **Un campo de prioridad editable a mano**: se decidió que la prioridad sea siempre calculada (no una opinión guardada), para que el criterio de priorización sea consistente en todo el portafolio. Se puede ajustar el peso de sus factores en `risk_engine.py` si el negocio lo requiere.
+- **Stack Next.js/React + mock en JSON + automatización con n8n**: se evaluó como alternativa y se descartó a propósito. Habría significado reescribir un prototipo ya probado end-to-end sin ganar precisión de negocio real, y se aleja de mantener la lógica de riesgo/prioridad en un único lugar determinista y testeable (`risk_engine.py`). Las ideas de negocio de valor de esa alternativa sí se incorporaron sobre el stack actual (ver "Orfandad operativa" y "Vista de equipo" arriba).
 
 ## Nota sobre las fechas del dataset importado
 

@@ -50,6 +50,7 @@ def dashboard():
     bucket_filter = request.args.get("bucket", "")
     owner_filter = request.args.get("owner", "")
     only_no_next_step = request.args.get("no_next_step", "") == "1"
+    only_orphaned = request.args.get("orphaned", "") == "1"
     query = request.args.get("q", "").strip().lower()
 
     if health_filter:
@@ -60,6 +61,8 @@ def dashboard():
         rows = [r for r in rows if r["project"]["owner_alias"] == owner_filter]
     if only_no_next_step:
         rows = [r for r in rows if r["diag"]["no_clear_next_step"]]
+    if only_orphaned:
+        rows = [r for r in rows if r["diag"]["operationally_orphaned"]]
     if query:
         rows = [
             r for r in rows
@@ -76,6 +79,7 @@ def dashboard():
         "bloqueados": sum(1 for r in all_rows_unfiltered if r["diag"]["health"] == "Bloqueado"),
         "en_riesgo": sum(1 for r in all_rows_unfiltered if r["diag"]["health"] == "En riesgo"),
         "sin_paso": sum(1 for r in all_rows_unfiltered if r["diag"]["no_clear_next_step"]),
+        "huerfanos": sum(1 for r in all_rows_unfiltered if r["diag"]["operationally_orphaned"]),
         "p0": sum(1 for r in all_rows_unfiltered if r["diag"]["priority_bucket"] == "P0 - Critica"),
     }
 
@@ -90,9 +94,48 @@ def dashboard():
             "bucket": bucket_filter,
             "owner": owner_filter,
             "no_next_step": only_no_next_step,
+            "orphaned": only_orphaned,
             "q": request.args.get("q", ""),
         },
     )
+
+
+@app.route("/equipo")
+def team_view():
+    conn = get_db()
+    people = db.list_people(conn)
+    all_tasks = db.list_tasks(conn)
+
+    rows = []
+    for person in people:
+        alias = person["member_alias"]
+        my_tasks = [t for t in all_tasks if t["assignee_alias"] == alias]
+        open_tasks = [t for t in my_tasks if t["status"] in risk_engine.OPEN_TASK_STATUSES]
+        blocked = [t for t in open_tasks if t["status"] == "Bloqueada"]
+        critical_high = [t for t in open_tasks if t["priority"] in ("Alta", "Critica")]
+
+        # Efecto dominó: tareas con dependencia asociada flotan al inicio,
+        # luego por prioridad y fecha límite.
+        priority_rank = {"Critica": 0, "Alta": 1, "Media": 2, "Baja": 3}
+        sorted_tasks = sorted(
+            open_tasks,
+            key=lambda t: (
+                0 if (t["dependency"] or "").strip() else 1,
+                priority_rank.get(t["priority"], 9),
+                t["due_date"] or "9999-99-99",
+            ),
+        )
+        rows.append({
+            "person": person,
+            "open_count": len(open_tasks),
+            "blocked_count": len(blocked),
+            "critical_count": len(critical_high),
+            "tasks": sorted_tasks,
+        })
+
+    max_open = max((r["open_count"] for r in rows), default=0) or 1
+    conn.close()
+    return render_template("team.html", rows=rows, max_open=max_open)
 
 
 @app.route("/proyectos/nuevo", methods=["GET", "POST"])

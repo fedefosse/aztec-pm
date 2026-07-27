@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Carga del equipo · Aztec PM{% endblock %}
+{% block content %}
+
+<a class="back-link" href="{{ url_for('dashboard') }}">&larr; Volver a la vista operativa</a>
+<h1>Carga operativa del equipo</h1>
+<p class="muted">Calculado en vivo a partir de las tareas abiertas asignadas. Las tareas con una dependencia asociada (efecto dominó — bloquean trabajo de otros) flotan al inicio de la lista de cada persona.</p>
+
+{% for row in rows %}
+{% set p = row.person %}
+<section class="card">
+  <div class="team-header">
+    <div>
+      <h3 style="margin-bottom:2px">{{ p.member_alias }}</h3>
+      <div class="muted">{{ p.role }}</div>
+    </div>
+    <div class="team-counts">
+      <span>{{ row.open_count }} abiertas</span>
+      <span class="{{ 'muted' if row.blocked_count == 0 else '' }}" style="color: {{ '#ef5464' if row.blocked_count else '' }}">{{ row.blocked_count }} bloqueadas</span>
+      <span class="{{ 'muted' if row.critical_count == 0 else '' }}" style="color: {{ '#e2a33d' if row.critical_count else '' }}">{{ row.critical_count }} alta/crítica</span>
+    </div>
+  </div>
+  <div class="load-bar-track">
+    <div class="load-bar-fill" style="width: {{ (row.open_count / max_open * 100) | round(1) }}%;"></div>
+  </div>
+
+  {% if row.tasks %}
+  <table class="ops-table" style="margin-top:12px">
+    <thead>
+      <tr><th>Tarea</th><th>Proyecto</th><th>Prioridad</th><th>Estado</th><th>Fecha límite</th><th>Depende de</th></tr>
+    </thead>
+    <tbody>
+      {% for t in row.tasks %}
+      <tr class="{% if (t.dependency or '')|trim %}row-risk{% endif %}">
+        <td><a href="{{ url_for('project_detail', project_code=t.project_code) }}">{{ t.title }}</a></td>
+        <td class="muted">{{ t.project_code }}</td>
+        <td>{{ t.priority }}</td>
+        <td>{{ t.status }}</td>
+        <td>{{ t.due_date or '—' }}</td>
+        <td class="muted">{{ t.dependency or '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted" style="margin-top:12px">Sin tareas abiertas asignadas.</p>
+  {% endif %}
+</section>
+{% endfor %}
+
+{% endblock %}
