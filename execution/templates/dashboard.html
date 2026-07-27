@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}Vista operativa · Aztec PM{% endblock %}
+{% block content %}
+
+<section class="summary-strip">
+  <div class="stat"><span class="stat-n">{{ summary.total }}</span><span class="stat-l">Proyectos activos en vista</span></div>
+  <div class="stat stat-blocked"><span class="stat-n">{{ summary.bloqueados }}</span><span class="stat-l">Bloqueados</span></div>
+  <div class="stat stat-risk"><span class="stat-n">{{ summary.en_riesgo }}</span><span class="stat-l">En riesgo</span></div>
+  <div class="stat stat-warn"><span class="stat-n">{{ summary.sin_paso }}</span><span class="stat-l">Sin siguiente paso</span></div>
+  <div class="stat stat-p0"><span class="stat-n">{{ summary.p0 }}</span><span class="stat-l">Prioridad P0</span></div>
+</section>
+
+<form class="filters" method="get">
+  <input type="text" name="q" placeholder="Buscar por proyecto, cliente o código..." value="{{ filters.q }}">
+
+  <select name="health">
+    <option value="">Salud: todas</option>
+    <option value="Bloqueado" {% if filters.health == 'Bloqueado' %}selected{% endif %}>Bloqueado</option>
+    <option value="En riesgo" {% if filters.health == 'En riesgo' %}selected{% endif %}>En riesgo</option>
+    <option value="Sano" {% if filters.health == 'Sano' %}selected{% endif %}>Sano</option>
+  </select>
+
+  <select name="bucket">
+    <option value="">Prioridad: todas</option>
+    <option value="P0 - Critica" {% if filters.bucket == 'P0 - Critica' %}selected{% endif %}>P0 - Crítica</option>
+    <option value="P1 - Alta" {% if filters.bucket == 'P1 - Alta' %}selected{% endif %}>P1 - Alta</option>
+    <option value="P2 - Media" {% if filters.bucket == 'P2 - Media' %}selected{% endif %}>P2 - Media</option>
+    <option value="P3 - Baja" {% if filters.bucket == 'P3 - Baja' %}selected{% endif %}>P3 - Baja</option>
+  </select>
+
+  <select name="owner">
+    <option value="">Responsable: todos</option>
+    {% for person in people %}
+    <option value="{{ person.member_alias }}" {% if filters.owner == person.member_alias %}selected{% endif %}>{{ person.member_alias }}</option>
+    {% endfor %}
+  </select>
+
+  <label class="checkbox-label">
+    <input type="checkbox" name="no_next_step" value="1" {% if filters.no_next_step %}checked{% endif %}>
+    Solo sin siguiente paso
+  </label>
+
+  <button type="submit" class="btn">Filtrar</button>
+  <a class="btn btn-ghost" href="{{ url_for('dashboard') }}">Limpiar</a>
+</form>
+
+<table class="ops-table">
+  <thead>
+    <tr>
+      <th>Prioridad</th>
+      <th>Proyecto</th>
+      <th>Cliente</th>
+      <th>Responsable</th>
+      <th>Salud</th>
+      <th>Fecha límite</th>
+      <th>Siguiente paso</th>
+      <th>Bloqueos</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+    {% set p = row.project %}
+    {% set d = row.diag %}
+    <tr class="{% if d.health == 'Bloqueado' %}row-blocked{% elif d.health == 'En riesgo' %}row-risk{% endif %}">
+      <td>
+        <span class="badge badge-priority-{{ d.priority_bucket[:2] }}">{{ d.priority_bucket }}</span>
+        <div class="score">{{ d.priority_score }}/100</div>
+      </td>
+      <td>
+        <a href="{{ url_for('project_detail', project_code=p.project_code) }}"><strong>{{ p.project_name }}</strong></a>
+        <div class="muted">{{ p.project_code }} · {{ p.engagement_type }}</div>
+      </td>
+      <td>{{ p.client_alias }}</td>
+      <td>{{ p.owner_alias or '—' }}</td>
+      <td>
+        <span class="badge badge-health-{{ d.health|replace(' ', '-') }}">{{ d.health }}</span>
+        {% if p.status != 'Activo' %}<div class="muted">{{ p.status }}</div>{% endif %}
+      </td>
+      <td>{{ p.target_date or '—' }}</td>
+      <td>
+        {% if d.no_clear_next_step %}
+          <span class="badge badge-warn">Sin definir</span>
+        {% else %}
+          {{ p.next_step }}
+        {% endif %}
+      </td>
+      <td class="truncate" title="{{ p.blockers }}">{{ p.blockers or '—' }}</td>
+      <td><a class="btn btn-ghost" href="{{ url_for('project_detail', project_code=p.project_code) }}">Ver</a></td>
+    </tr>
+    {% else %}
+    <tr><td colspan="9" class="muted">No hay proyectos que coincidan con el filtro.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% endblock %}

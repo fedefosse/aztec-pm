@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+execution/aztec_pm.db
+.tmp/*
+!.tmp/.gitkeep

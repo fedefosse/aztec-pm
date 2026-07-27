@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Editar' if project else 'Nuevo' }} proyecto · Aztec PM{% endblock %}
+{% block content %}
+
+<a class="back-link" href="{{ url_for('dashboard') }}">&larr; Volver a la vista operativa</a>
+<h1>{{ 'Editar proyecto' if project else 'Nuevo proyecto' }}</h1>
+
+<form class="form-grid" method="post">
+  <label>
+    Código de proyecto
+    <input type="text" name="project_code" value="{{ project.project_code if project else '' }}"
+           {% if project %}readonly{% endif %} required placeholder="ej. PRJ-23">
+  </label>
+
+  <label>
+    Cliente
+    <input type="text" name="client_alias" value="{{ project.client_alias if project else '' }}" required>
+  </label>
+
+  <label>
+    Nombre del proyecto
+    <input type="text" name="project_name" value="{{ project.project_name if project else '' }}" required>
+  </label>
+
+  <label>
+    Tipo de compromiso
+    <select name="engagement_type" required>
+      {% for et in engagement_types %}
+      <option value="{{ et }}" {% if project and project.engagement_type == et %}selected{% endif %}>{{ et }}</option>
+      {% endfor %}
+    </select>
+  </label>
+
+  <label>
+    Responsable
+    <select name="owner_alias">
+      <option value="">Sin asignar</option>
+      {% for person in people %}
+      <option value="{{ person.member_alias }}" {% if project and project.owner_alias == person.member_alias %}selected{% endif %}>{{ person.member_alias }}</option>
+      {% endfor %}
+    </select>
+  </label>
+
+  <label>
+    Estado
+    <select name="status">
+      {% for s in statuses %}
+      <option value="{{ s }}" {% if project and project.status == s %}selected{% elif not project and s == 'Activo' %}selected{% endif %}>{{ s }}</option>
+      {% endfor %}
+    </select>
+  </label>
+
+  <label>
+    Etapa
+    <input type="text" name="stage" value="{{ project.stage if project else 'Ejecucion' }}">
+  </label>
+
+  <label>
+    Fecha límite
+    <input type="date" name="target_date" value="{{ project.target_date if project else '' }}">
+  </label>
+
+  <label>
+    Fecha de inicio
+    <input type="date" name="start_date" value="{{ project.start_date if project else '' }}">
+  </label>
+
+  <label>
+    Valor de negocio
+    <input type="number" step="1" name="business_value" value="{{ project.business_value if project else '' }}">
+  </label>
+
+  <label>
+    Moneda
+    <select name="currency">
+      {% for c in currencies %}
+      <option value="{{ c }}" {% if project and project.currency == c %}selected{% endif %}>{{ c }}</option>
+      {% endfor %}
+    </select>
+  </label>
+
+  <label class="span-2">
+    Siguiente paso
+    <input type="text" name="next_step" value="{{ project.next_step if project else '' }}"
+           placeholder="¿Qué hay que hacer a continuación, concretamente?">
+  </label>
+
+  <label class="span-2">
+    Bloqueos
+    <textarea name="blockers" rows="2" placeholder="Vacío = sin bloqueos.">{{ project.blockers if project else '' }}</textarea>
+  </label>
+
+  <label class="span-2">
+    Resumen
+    <textarea name="summary" rows="2">{{ project.summary if project else '' }}</textarea>
+  </label>
+
+  <div class="span-2 form-actions">
+    <button type="submit" class="btn btn-primary">Guardar proyecto</button>
+    <a class="btn btn-ghost" href="{{ url_for('dashboard') }}">Cancelar</a>
+  </div>
+</form>
+
+{% endblock %}

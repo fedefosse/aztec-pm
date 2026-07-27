@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block title %}{{ project.project_name }} · Aztec PM{% endblock %}
+{% block content %}
+
+<a class="back-link" href="{{ url_for('dashboard') }}">&larr; Volver a la vista operativa</a>
+
+<div class="detail-header">
+  <div>
+    <h1>{{ project.project_name }}</h1>
+    <div class="muted">{{ project.project_code }} · {{ project.client_alias }} · {{ project.engagement_type }} · {{ project.stage }}</div>
+  </div>
+  <a class="btn btn-primary" href="{{ url_for('project_edit', project_code=project.project_code) }}">Editar proyecto</a>
+</div>
+
+<section class="diag-panel">
+  <div class="diag-badges">
+    <span class="badge badge-health-{{ diag.health|replace(' ', '-') }}">{{ diag.health }}</span>
+    <span class="badge badge-priority-{{ diag.priority_bucket[:2] }}">{{ diag.priority_bucket }} · {{ diag.priority_score }}/100</span>
+    {% if diag.no_clear_next_step %}<span class="badge badge-warn">Sin siguiente paso claro</span>{% endif %}
+    <span class="badge badge-plain">{{ project.status }}</span>
+  </div>
+  <details class="breakdown">
+    <summary>Ver desglose del score de prioridad</summary>
+    <ul>
+      {% for factor, points in diag.priority_breakdown.items() %}
+      <li>{{ factor }}: +{{ points }}</li>
+      {% endfor %}
+    </ul>
+  </details>
+</section>
+
+<section class="grid-2">
+  <div class="card">
+    <h3>Responsable</h3>
+    <p>{{ project.owner_alias or 'Sin asignar' }}</p>
+  </div>
+  <div class="card">
+    <h3>Fecha límite</h3>
+    <p>{{ project.target_date or 'Sin definir' }}</p>
+  </div>
+  <div class="card">
+    <h3>Siguiente paso</h3>
+    <p>{{ project.next_step or '—' }}</p>
+  </div>
+  <div class="card">
+    <h3>Bloqueos</h3>
+    <p>{{ project.blockers or 'Ninguno' }}</p>
+  </div>
+</section>
+
+{% if project.summary %}
+<section class="card">
+  <h3>Resumen</h3>
+  <p>{{ project.summary }}</p>
+</section>
+{% endif %}
+
+<section class="card">
+  <h3>Tareas ({{ diag.open_tasks }} abiertas · {{ diag.overdue_tasks }} vencidas · {{ diag.blocked_tasks }} bloqueadas)</h3>
+  <table class="ops-table">
+    <thead>
+      <tr><th>Título</th><th>Responsable</th><th>Prioridad</th><th>Estado</th><th>Fecha límite</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for t in tasks %}
+      <tr>
+        <td>{{ t.title }}</td>
+        <td>{{ t.assignee_alias or '—' }}</td>
+        <td>{{ t.priority }}</td>
+        <td>
+          <form method="post" action="{{ url_for('task_update_status', task_code=t.task_code) }}" class="inline-form">
+            <input type="hidden" name="project_code" value="{{ project.project_code }}">
+            <select name="status" onchange="this.form.submit()">
+              {% for s in task_statuses %}
+              <option value="{{ s }}" {% if t.status == s %}selected{% endif %}>{{ s }}</option>
+              {% endfor %}
+            </select>
+          </form>
+        </td>
+        <td>{{ t.due_date or '—' }}</td>
+        <td class="muted truncate" title="{{ t.detail }}">{{ t.detail }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="muted">Sin tareas registradas.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <details class="add-form">
+    <summary>+ Agregar tarea</summary>
+    <form method="post" action="{{ url_for('task_new', project_code=project.project_code) }}" class="form-grid">
+      <label class="span-2">Título<input type="text" name="title" required></label>
+      <label>Responsable
+        <input type="text" name="assignee_alias" placeholder="alias del responsable">
+      </label>
+      <label>Prioridad
+        <select name="priority">
+          {% for p in task_priorities %}<option value="{{ p }}">{{ p }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>Estado
+        <select name="status">
+          {% for s in task_statuses %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>Fecha límite<input type="date" name="due_date"></label>
+      <label class="span-2">Detalle<textarea name="detail" rows="2"></textarea></label>
+      <div class="span-2"><button type="submit" class="btn btn-primary">Agregar tarea</button></div>
+    </form>
+  </details>
+</section>
+
+<section class="card">
+  <h3>Notas</h3>
+  <form method="post" action="{{ url_for('note_new', project_code=project.project_code) }}" class="inline-form">
+    <input type="text" name="text" placeholder="Agregar una nota..." required>
+    <button type="submit" class="btn">Agregar</button>
+  </form>
+  <ul class="notes-list">
+    {% for n in notes %}
+    <li><span class="muted">{{ n.ts }}</span> — {{ n.text }}</li>
+    {% else %}
+    <li class="muted">Sin notas todavía.</li>
+    {% endfor %}
+  </ul>
+</section>
+
+{% endblock %}
