@@ -71,10 +71,43 @@ def get_db():
     return conn
 
 
+def refresh_diagnosis(conn, project, tasks, today):
+    """Calcula el diagnóstico (salud + prioridad) y lo GRABA en la fila del
+    proyecto — no es un valor de solo lectura. Se llama en cada mutación que
+    pueda afectarlo (alta/edición de proyecto, alta/cambio/borrado de tarea)
+    y también en cada carga del dashboard, para que ni el paso del tiempo
+    (una fecha límite que se vence) lo deje desactualizado.
+    """
+    diag = risk_engine.diagnose(project, tasks, today)
+    diag["computed_at"] = db.update_priority_snapshot(conn, project["project_code"], diag)
+    return diag
+
+
+def refresh_diagnosis_for(conn, project_code, today=None):
+    """Atajo: releer proyecto+tareas actuales y refrescar su diagnóstico."""
+    today = today or date.today()
+    project = db.get_project(conn, project_code)
+    if project is None:
+        return None
+    tasks = db.list_tasks(conn, project_code)
+    return refresh_diagnosis(conn, project, tasks, today)
+
+
 def build_row(conn, project, today):
     tasks = db.list_tasks(conn, project["project_code"])
-    diag = risk_engine.diagnose(project, tasks, today)
+    diag = refresh_diagnosis(conn, project, tasks, today)
     return {"project": project, "tasks": tasks, "diag": diag}
+
+
+def compute_summary(rows):
+    return {
+        "total": len(rows),
+        "bloqueados": sum(1 for r in rows if r["diag"]["health"] == "Bloqueado"),
+        "en_riesgo": sum(1 for r in rows if r["diag"]["health"] == "En riesgo"),
+        "sin_paso": sum(1 for r in rows if r["diag"]["no_clear_next_step"]),
+        "huerfanos": sum(1 for r in rows if r["diag"]["operationally_orphaned"]),
+        "p0": sum(1 for r in rows if r["diag"]["priority_bucket"] == "P0 - Critica"),
+    }
 
 
 @app.route("/")
@@ -114,15 +147,7 @@ def dashboard():
 
     rows.sort(key=lambda r: r["diag"]["priority_score"], reverse=True)
 
-    all_rows_unfiltered = all_rows
-    summary = {
-        "total": len(all_rows_unfiltered),
-        "bloqueados": sum(1 for r in all_rows_unfiltered if r["diag"]["health"] == "Bloqueado"),
-        "en_riesgo": sum(1 for r in all_rows_unfiltered if r["diag"]["health"] == "En riesgo"),
-        "sin_paso": sum(1 for r in all_rows_unfiltered if r["diag"]["no_clear_next_step"]),
-        "huerfanos": sum(1 for r in all_rows_unfiltered if r["diag"]["operationally_orphaned"]),
-        "p0": sum(1 for r in all_rows_unfiltered if r["diag"]["priority_bucket"] == "P0 - Critica"),
-    }
+    summary = compute_summary(all_rows)
 
     conn.close()
     return render_template(
@@ -141,40 +166,64 @@ def dashboard():
     )
 
 
+@app.route("/dashboard")
+def executive_dashboard():
+    """Panel ejecutivo: mismo dato que la vista operativa, reorganizado
+    para responder rápido "dónde está el cuello de botella" y "quién
+    necesita ayuda", con la evidencia (no solo la conclusión) a la vista.
+    """
+    conn = get_db()
+    today = date.today()
+    projects = db.list_projects(conn)
+    people = db.list_people(conn)
+    all_tasks = db.list_tasks(conn)
+
+    all_rows = [build_row(conn, p, today) for p in projects]
+
+    owner_filter = request.args.get("owner", "")
+    rows = [r for r in all_rows if r["project"]["owner_alias"] == owner_filter] if owner_filter else all_rows
+
+    summary = compute_summary(all_rows)
+    health_dist = risk_engine.health_distribution([r["diag"]["health"] for r in all_rows])
+
+    top_risk = sorted(rows, key=lambda r: r["diag"]["priority_score"], reverse=True)[:8]
+
+    scoped_people = [p for p in people if p["member_alias"] == owner_filter] if owner_filter else people
+    workload_rows, blocking_map = risk_engine.workload_by_person(scoped_people, all_tasks)
+    max_open = max((r["open_count"] for r in workload_rows), default=0) or 1
+
+    hygiene_stats = risk_engine.hygiene_stats_by_person(scoped_people, projects, all_tasks, today)
+
+    task_by_code = {t["task_code"]: t for t in all_tasks}
+    blocking_ranked = sorted(blocking_map.items(), key=lambda kv: len(kv[1]), reverse=True)
+    top_blockers = [
+        {"task": task_by_code[code], "blocks": titles}
+        for code, titles in blocking_ranked if code in task_by_code
+    ][:6]
+
+    conn.close()
+    return render_template(
+        "executive_dashboard.html",
+        summary=summary,
+        health_dist=health_dist,
+        health_total=sum(health_dist.values()) or 1,
+        top_risk=top_risk,
+        workload_rows=workload_rows,
+        max_open=max_open,
+        hygiene_stats=hygiene_stats,
+        top_blockers=top_blockers,
+        total_projects=len(all_rows),
+        people=people,
+        filters={"owner": owner_filter},
+    )
+
+
 @app.route("/equipo")
 def team_view():
     conn = get_db()
     people = db.list_people(conn)
     all_tasks = db.list_tasks(conn)
-    blocking_map = risk_engine.compute_blocking_map(all_tasks)
-
-    rows = []
-    for person in people:
-        alias = person["member_alias"]
-        my_tasks = [t for t in all_tasks if t["assignee_alias"] == alias]
-        open_tasks = [t for t in my_tasks if t["status"] in risk_engine.OPEN_TASK_STATUSES]
-        blocked = [t for t in open_tasks if t["status"] == "Bloqueada"]
-        critical_high = [t for t in open_tasks if t["priority"] in ("Alta", "Critica")]
-
-        # Efecto dominó: las tareas de las que dependen OTRAS tareas abiertas
-        # (no las que a su vez dependen de algo) flotan al inicio — son las
-        # que, si no avanzan, frenan trabajo de alguien más.
-        priority_rank = {"Critica": 0, "Alta": 1, "Media": 2, "Baja": 3}
-        sorted_tasks = sorted(
-            open_tasks,
-            key=lambda t: (
-                0 if t["task_code"] in blocking_map else 1,
-                priority_rank.get(t["priority"], 9),
-                t["due_date"] or "9999-99-99",
-            ),
-        )
-        rows.append({
-            "person": person,
-            "open_count": len(open_tasks),
-            "blocked_count": len(blocked),
-            "critical_count": len(critical_high),
-            "tasks": sorted_tasks,
-        })
+    rows, blocking_map = risk_engine.workload_by_person(people, all_tasks)
 
     max_open = max((r["open_count"] for r in rows), default=0) or 1
     conn.close()
@@ -200,6 +249,7 @@ def project_new():
             conn.close()
             return render_project_form(data, people, errors, is_edit=False)
         db.upsert_project(conn, data)
+        refresh_diagnosis_for(conn, data["project_code"])
         conn.close()
         return redirect(url_for("project_detail", project_code=data["project_code"]))
     conn.close()
@@ -217,7 +267,7 @@ def project_detail(project_code):
     tasks = db.list_tasks(conn, project_code)
     notes = db.list_notes(conn, project_code)
     people = db.list_people(conn)
-    diag = risk_engine.diagnose(project, tasks, today)
+    diag = refresh_diagnosis(conn, project, tasks, today)
     blocking_map = risk_engine.compute_blocking_map(tasks)
     conn.close()
     return render_template(
@@ -243,6 +293,7 @@ def project_edit(project_code):
             conn.close()
             return render_project_form(data, people, errors, is_edit=True)
         db.upsert_project(conn, data)
+        refresh_diagnosis_for(conn, project_code)
         conn.close()
         return redirect(url_for("project_detail", project_code=project_code))
     conn.close()
@@ -293,6 +344,7 @@ def task_new(project_code):
         "dependency": "",
     }
     db.upsert_task(conn, data)
+    refresh_diagnosis_for(conn, project_code)
     conn.close()
     return redirect(url_for("project_detail", project_code=project_code))
 
@@ -310,6 +362,7 @@ def task_update_status(task_code):
         data = {k: task[k] for k in db.TASK_FIELDS}
         data["status"] = new_status
         db.upsert_task(conn, data)
+        refresh_diagnosis_for(conn, project_code)
     conn.close()
     return redirect(url_for("project_detail", project_code=project_code))
 
@@ -319,6 +372,7 @@ def task_delete(task_code):
     conn = get_db()
     project_code = request.form.get("project_code")
     db.delete_task(conn, task_code)
+    refresh_diagnosis_for(conn, project_code)
     conn.close()
     return redirect(url_for("project_detail", project_code=project_code))
 

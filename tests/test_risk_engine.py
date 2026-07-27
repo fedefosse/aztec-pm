@@ -234,5 +234,79 @@ class TestComputeBlockingMap(unittest.TestCase):
         self.assertNotIn("A-T01", blocks)
 
 
+class TestHealthDistribution(unittest.TestCase):
+    def test_cuenta_por_salud(self):
+        dist = risk_engine.health_distribution(
+            ["Bloqueado", "Bloqueado", "Sano", "En riesgo", "Sano", "Sano"]
+        )
+        self.assertEqual(dist, {"Bloqueado": 2, "En riesgo": 1, "Sano": 3})
+
+    def test_lista_vacia(self):
+        self.assertEqual(
+            risk_engine.health_distribution([]),
+            {"Bloqueado": 0, "En riesgo": 0, "Sano": 0},
+        )
+
+
+def make_person(alias, role="Delivery"):
+    return {"member_alias": alias, "role": role}
+
+
+class TestWorkloadByPerson(unittest.TestCase):
+    def test_ordena_de_mayor_a_menor_carga_abierta(self):
+        people = [make_person("A"), make_person("B")]
+        tasks = [
+            make_task(task_code="P-T01", title="T1 - X", assignee_alias="A", status="Por hacer"),
+            make_task(task_code="P-T02", title="T2 - X", assignee_alias="B", status="Por hacer"),
+            make_task(task_code="P-T03", title="T3 - X", assignee_alias="B", status="Por hacer"),
+        ]
+        rows, _ = risk_engine.workload_by_person(people, tasks)
+        self.assertEqual([r["person"]["member_alias"] for r in rows], ["B", "A"])
+        self.assertEqual(rows[0]["open_count"], 2)
+
+    def test_tareas_hechas_no_cuentan_como_carga_abierta(self):
+        people = [make_person("A")]
+        tasks = [make_task(assignee_alias="A", status="Hecho")]
+        rows, _ = risk_engine.workload_by_person(people, tasks)
+        self.assertEqual(rows[0]["open_count"], 0)
+
+    def test_persona_sin_tareas_devuelve_ceros_no_error(self):
+        people = [make_person("Nadie")]
+        rows, _ = risk_engine.workload_by_person(people, [])
+        self.assertEqual(rows[0]["open_count"], 0)
+        self.assertEqual(rows[0]["tasks"], [])
+
+
+class TestHygieneStatsByPerson(unittest.TestCase):
+    def test_next_step_pct_sobre_sus_proyectos(self):
+        people = [make_person("A")]
+        projects = [
+            make_project(project_code="P1", owner_alias="A", next_step="Definido"),
+            make_project(project_code="P2", owner_alias="A", next_step=""),
+        ]
+        stats = risk_engine.hygiene_stats_by_person(people, projects, [], TODAY)
+        self.assertEqual(stats[0]["project_count"], 2)
+        self.assertEqual(stats[0]["next_step_pct"], 50)
+
+    def test_overdue_pct_sobre_sus_tareas_abiertas(self):
+        people = [make_person("A")]
+        tasks = [
+            make_task(assignee_alias="A", status="Por hacer",
+                      due_date=(TODAY - timedelta(days=1)).isoformat()),
+            make_task(assignee_alias="A", status="Por hacer",
+                      due_date=(TODAY + timedelta(days=5)).isoformat()),
+        ]
+        stats = risk_engine.hygiene_stats_by_person(people, [], tasks, TODAY)
+        self.assertEqual(stats[0]["open_task_count"], 2)
+        self.assertEqual(stats[0]["overdue_pct"], 50)
+
+    def test_sin_proyectos_ni_tareas_devuelve_none_no_cero(self):
+        # 0% y "sin datos para calcular" son cosas distintas — no confundirlas.
+        people = [make_person("Nadie")]
+        stats = risk_engine.hygiene_stats_by_person(people, [], [], TODAY)
+        self.assertIsNone(stats[0]["next_step_pct"])
+        self.assertIsNone(stats[0]["overdue_pct"])
+
+
 if __name__ == "__main__":
     unittest.main()

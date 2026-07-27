@@ -5,6 +5,7 @@ Sin lógica de negocio aquí: solo esquema y acceso a datos. El diagnóstico
 (riesgo/prioridad) vive en risk_engine.py, que consume estas funciones.
 """
 
+import json
 import sqlite3
 from pathlib import Path
 from datetime import datetime, timezone
@@ -27,6 +28,16 @@ CREATE TABLE IF NOT EXISTS projects (
     start_date TEXT,
     stage TEXT,
     summary TEXT,
+    -- Diagnóstico persistido (no editable a mano): recalculado y grabado por
+    -- webapp.py::refresh_diagnosis en cada mutación que pueda afectarlo
+    -- (alta/edición de proyecto, alta/cambio/borrado de tarea) y también en
+    -- cada carga del dashboard, para que ni el simple paso del tiempo lo
+    -- deje desactualizado. Ver directives/gestion_proyectos.md.
+    health TEXT CHECK(health IN ('Bloqueado','En riesgo','Sano') OR health IS NULL),
+    priority_score INTEGER,
+    priority_bucket TEXT,
+    priority_breakdown TEXT,
+    priority_computed_at TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -137,6 +148,29 @@ def get_project(conn, project_code):
 
 def list_projects(conn):
     return conn.execute("SELECT * FROM projects ORDER BY project_code").fetchall()
+
+
+def update_priority_snapshot(conn, project_code, diag):
+    """Graba el diagnóstico calculado (salud + prioridad) en la fila del
+    proyecto. `diag` es el dict devuelto por risk_engine.diagnose(). Devuelve
+    el timestamp con el que quedó grabado, para poder mostrarlo como
+    evidencia de que es un valor real y fresco, no una opinión guardada.
+    """
+    ts = now_iso()
+    conn.execute(
+        "UPDATE projects SET health = ?, priority_score = ?, priority_bucket = ?, "
+        "priority_breakdown = ?, priority_computed_at = ? WHERE project_code = ?",
+        (
+            diag["health"],
+            diag["priority_score"],
+            diag["priority_bucket"],
+            json.dumps(diag["priority_breakdown"], ensure_ascii=False),
+            ts,
+            project_code,
+        ),
+    )
+    conn.commit()
+    return ts
 
 
 def delete_project(conn, project_code):

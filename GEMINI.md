@@ -5,8 +5,8 @@
 Este sistema está organizado en 3 capas, para separar la intención (qué hacer y por qué) de la ejecución (código determinista):
 
 - **`directives/`** — SOPs en Markdown. `directives/gestion_proyectos.md` define el modelo de datos, el criterio de detección de riesgo y la fórmula de priorización, en lenguaje natural. Es la fuente de verdad de las reglas de negocio: si cambia una regla de riesgo o de puntaje, se documenta ahí primero y luego se refleja en `execution/risk_engine.py`.
-- **`execution/`** — scripts Python deterministas: `db.py` (esquema/acceso a SQLite), `import_dataset.py` (carga del dataset semilla), `risk_engine.py` (funciones puras de riesgo/prioridad, sin efectos secundarios) y `webapp.py` (rutas Flask: CRUD + vista operativa).
-- **`tests/`** — pruebas de `risk_engine.py` con `unittest` de la librería estándar, sin tocar la base de datos.
+- **`execution/`** — scripts Python deterministas: `db.py` (esquema/acceso a SQLite, incluida la persistencia del diagnóstico), `import_dataset.py` (carga del dataset semilla + cálculo inicial de prioridad/salud), `risk_engine.py` (funciones puras de riesgo/prioridad/analytics, sin efectos secundarios) y `webapp.py` (rutas Flask: CRUD + vista operativa `/` + dashboard ejecutivo `/dashboard` + equipo `/equipo`). `static/live-filters.js` es el único JavaScript del proyecto.
+- **`tests/`** — pruebas de `risk_engine.py`, `webapp.py` y `db.py` con `unittest` de la librería estándar (las de `db.py` sí tocan una base de datos, pero en memoria).
 - **`seed_data/`** — copia de solo lectura del dataset original de Aztec, exportada a CSV. Nunca se edita a mano.
 
 **Por qué separar así:** la lógica de riesgo/prioridad debe ser la misma sin importar quién la corra o cuándo — por eso vive en funciones puras y testeables, no dispersa entre plantillas o rutas. La directiva es el contrato legible por humanos de esas reglas; el código es su implementación.

@@ -8,7 +8,7 @@
 
 {% for row in rows %}
 {% set p = row.person %}
-<section class="card">
+<section class="card" id="{{ p.member_alias|replace(' ', '-') }}">
   <div class="team-header">
     <div>
       <h3 class="tight-heading">{{ p.member_alias }}</h3>

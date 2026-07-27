@@ -224,3 +224,94 @@ def diagnose(project, tasks, today=None):
         "overdue_tasks": len(buckets["overdue"]),
         "blocked_tasks": len(buckets["blocked"]),
     }
+
+
+def health_distribution(healths):
+    """Cuenta de proyectos por salud, para el donut del dashboard ejecutivo.
+    `healths` es la lista de valores 'health' ya calculados (uno por proyecto)."""
+    counts = {"Bloqueado": 0, "En riesgo": 0, "Sano": 0}
+    for h in healths:
+        counts[h] = counts.get(h, 0) + 1
+    return counts
+
+
+def workload_by_person(people, all_tasks):
+    """Carga de trabajo por persona a partir de TODAS las tareas del
+    portafolio (no solo de un proyecto). Reutilizado por /equipo y
+    /dashboard para no calcular esto dos veces con lógica distinta.
+
+    Devuelve una lista de dicts (uno por persona) ordenada de mayor a menor
+    carga abierta — así "quién tiene más atraso que otros" es simplemente
+    leer la lista de arriba hacia abajo.
+    """
+    blocking_map = compute_blocking_map(all_tasks)
+    priority_rank = {"Critica": 0, "Alta": 1, "Media": 2, "Baja": 3}
+
+    rows = []
+    for person in people:
+        alias = person["member_alias"]
+        my_tasks = [t for t in all_tasks if t["assignee_alias"] == alias]
+        open_tasks = [t for t in my_tasks if t["status"] in OPEN_TASK_STATUSES]
+        blocked = [t for t in open_tasks if t["status"] == "Bloqueada"]
+        critical_high = [t for t in open_tasks if t["priority"] in ("Alta", "Critica")]
+
+        # Efecto dominó: las tareas de las que dependen OTRAS tareas abiertas
+        # flotan al inicio — son las que, si no avanzan, frenan a alguien más.
+        sorted_tasks = sorted(
+            open_tasks,
+            key=lambda t: (
+                0 if t["task_code"] in blocking_map else 1,
+                priority_rank.get(t["priority"], 9),
+                t["due_date"] or "9999-99-99",
+            ),
+        )
+        rows.append({
+            "person": person,
+            "open_count": len(open_tasks),
+            "blocked_count": len(blocked),
+            "critical_count": len(critical_high),
+            "tasks": sorted_tasks,
+        })
+
+    rows.sort(key=lambda r: r["open_count"], reverse=True)
+    return rows, blocking_map
+
+
+def hygiene_stats_by_person(people, projects, all_tasks, today=None):
+    """Evidencia de higiene operativa por persona — NO es un índice único:
+    se muestran dos señales por separado (ver directiva) para que se pueda
+    distinguir "buen proceso" de "le tocó una carga más fácil".
+
+    - next_step_pct: % de los proyectos donde es responsable (owner_alias)
+      que tienen un siguiente paso definido.
+    - overdue_pct: % de sus tareas abiertas (assignee_alias) que están
+      vencidas.
+
+    Ambos son `None` (no `0`) cuando no hay base para calcular el
+    porcentaje (nadie es responsable de ningún proyecto, o no tiene tareas
+    abiertas) — 0% y "sin datos" no son lo mismo y no deben mostrarse igual.
+    """
+    today = today or date.today()
+    stats = []
+    for person in people:
+        alias = person["member_alias"]
+
+        my_projects = [p for p in projects if p["owner_alias"] == alias]
+        with_next_step = [p for p in my_projects if not has_no_clear_next_step(p)]
+        next_step_pct = (
+            round(100 * len(with_next_step) / len(my_projects)) if my_projects else None
+        )
+
+        my_tasks = [t for t in all_tasks if t["assignee_alias"] == alias]
+        open_tasks = [t for t in my_tasks if t["status"] in OPEN_TASK_STATUSES]
+        overdue = [t for t in open_tasks if task_is_overdue(t, today)]
+        overdue_pct = round(100 * len(overdue) / len(open_tasks)) if open_tasks else None
+
+        stats.append({
+            "person": person,
+            "project_count": len(my_projects),
+            "next_step_pct": next_step_pct,
+            "open_task_count": len(open_tasks),
+            "overdue_pct": overdue_pct,
+        })
+    return stats

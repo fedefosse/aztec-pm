@@ -2,16 +2,28 @@
 {% block title %}Vista operativa · Aztec PM{% endblock %}
 {% block content %}
 
-<section class="summary-strip">
-  <div class="stat"><span class="stat-n">{{ summary.total }}</span><span class="stat-l">Proyectos activos en vista</span></div>
-  <div class="stat stat-blocked"><span class="stat-n">{{ summary.bloqueados }}</span><span class="stat-l">Bloqueados</span></div>
-  <div class="stat stat-risk"><span class="stat-n">{{ summary.en_riesgo }}</span><span class="stat-l">En riesgo</span></div>
-  <div class="stat stat-warn"><span class="stat-n">{{ summary.sin_paso }}</span><span class="stat-l">Sin siguiente paso</span></div>
-  <div class="stat stat-warn"><span class="stat-n">{{ summary.huerfanos }}</span><span class="stat-l">Activos sin tareas abiertas</span></div>
-  <div class="stat stat-p0"><span class="stat-n">{{ summary.p0 }}</span><span class="stat-l">Prioridad P0</span></div>
+<section class="summary-strip" id="dash-summary">
+  <a data-live-link class="stat {{ 'stat-active' if not filters.health and not filters.bucket and not filters.no_next_step and not filters.orphaned else '' }}" href="{{ url_for('dashboard') }}">
+    <span class="stat-n">{{ summary.total }}</span><span class="stat-l">Proyectos activos en vista</span>
+  </a>
+  <a data-live-link class="stat stat-blocked {{ 'stat-active' if filters.health == 'Bloqueado' else '' }}" href="{{ url_for('dashboard', health='Bloqueado') }}">
+    <span class="stat-n">{{ summary.bloqueados }}</span><span class="stat-l">Bloqueados</span>
+  </a>
+  <a data-live-link class="stat stat-risk {{ 'stat-active' if filters.health == 'En riesgo' else '' }}" href="{{ url_for('dashboard', health='En riesgo') }}">
+    <span class="stat-n">{{ summary.en_riesgo }}</span><span class="stat-l">En riesgo</span>
+  </a>
+  <a data-live-link class="stat stat-warn {{ 'stat-active' if filters.no_next_step else '' }}" href="{{ url_for('dashboard', no_next_step='1') }}">
+    <span class="stat-n">{{ summary.sin_paso }}</span><span class="stat-l">Sin siguiente paso</span>
+  </a>
+  <a data-live-link class="stat stat-warn {{ 'stat-active' if filters.orphaned else '' }}" href="{{ url_for('dashboard', orphaned='1') }}">
+    <span class="stat-n">{{ summary.huerfanos }}</span><span class="stat-l">Activos sin tareas abiertas</span>
+  </a>
+  <a data-live-link class="stat stat-p0 {{ 'stat-active' if filters.bucket == 'P0 - Critica' else '' }}" href="{{ url_for('dashboard', bucket='P0 - Critica') }}">
+    <span class="stat-n">{{ summary.p0 }}</span><span class="stat-l">Prioridad P0</span>
+  </a>
 </section>
 
-<form class="filters" method="get">
+<form class="filters" method="get" id="dash-filters" data-live-target="dash-summary,dash-results">
   <input type="text" name="q" placeholder="Buscar por proyecto, cliente o código..." value="{{ filters.q }}">
 
   <select name="health">
@@ -47,10 +59,11 @@
   </label>
 
   <button type="submit" class="btn">Filtrar</button>
-  <a class="btn btn-ghost" href="{{ url_for('dashboard') }}">Limpiar</a>
+  <a data-live-link class="btn btn-ghost" href="{{ url_for('dashboard') }}">Limpiar</a>
+  <span class="filter-status muted" id="dash-filter-status" aria-live="polite"></span>
 </form>
 
-<table class="ops-table">
+<table class="ops-table" id="dash-results">
   <thead>
     <tr>
       <th>Prioridad</th>
@@ -104,3 +117,4 @@
 </table>
 
 {% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='live-filters.js') }}"></script>{% endblock %}

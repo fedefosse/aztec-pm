@@ -1,13 +1,13 @@
 # Aztec PM — Sistema de Gestión de Proyectos
 
-Prototipo funcional para el reto de Desarrollador de Soluciones con IA de Aztec: gestión de proyectos y tareas con detección automática de riesgo/bloqueo/falta de siguiente paso, y un criterio de priorización explícito y reproducible.
+Prototipo funcional para el reto de Desarrollador de Soluciones con IA de Aztec: gestión de proyectos y tareas con detección automática de riesgo/bloqueo/falta de siguiente paso, un criterio de priorización explícito y **persistido** (no solo calculado), y un dashboard ejecutivo para identificar cuellos de botella y comparar carga entre el equipo con evidencia, no solo intuición.
 
 ## Arquitectura
 
 Este proyecto sigue una arquitectura de 3 capas (ver `CLAUDE.md` en esta misma carpeta para el detalle):
 
 - **`directives/gestion_proyectos.md`** — el SOP: modelo de datos, criterio de riesgo y de priorización, en lenguaje natural. **Léelo primero** — ahí está la explicación completa del criterio de priorización.
-- **`execution/`** — código Python determinista: importación de datos, motor de riesgo/prioridad (funciones puras, sin efectos secundarios) y la app web (Flask) que expone todo como CRUD + vista operativa.
+- **`execution/`** — código Python determinista: importación de datos, motor de riesgo/prioridad/analytics (funciones puras, sin efectos secundarios) y la app web (Flask) que expone todo como CRUD + vista operativa + dashboard ejecutivo. `static/live-filters.js` es el único JavaScript del proyecto (filtrado instantáneo, sin frameworks).
 - **`tests/`** — pruebas de `risk_engine.py` y de las funciones puras de `webapp.py` (`unittest` estándar, sin tocar la base de datos).
 - **`seed_data/`** — copia en CSV del dataset original de Aztec (de solo lectura), exportado una vez desde el `.xlsx` compartido.
 - **`CHANGELOG.md`** — historial de decisiones de este prototipo, en orden.
@@ -25,7 +25,7 @@ python3 execution/import_dataset.py    # crea execution/aztec_pm.db desde seed_d
 python3 execution/webapp.py            # levanta el servidor en http://127.0.0.1:5050
 ```
 
-Abre `http://127.0.0.1:5050` — ahí está la vista operativa con los 22 proyectos reales del dataset de Aztec más 5 proyectos sintéticos de ejemplo (ver más abajo por qué).
+Abre `http://127.0.0.1:5050` — ahí está la vista operativa con los 22 proyectos reales del dataset de Aztec más 5 proyectos sintéticos de ejemplo (ver más abajo por qué). El dashboard ejecutivo está en `http://127.0.0.1:5050/dashboard`.
 
 `import_dataset.py` reinicializa la base de datos por completo cada vez que se corre (útil en desarrollo/demo; ver advertencia en la directiva sobre no correrlo en producción sobre datos vivos).
 
@@ -78,7 +78,33 @@ La vista operativa (`/`) ordena por este índice de mayor a menor por defecto, y
 - **Sin siguiente paso claro**: el campo "siguiente paso" está vacío — independiente de si el proyecto está sano o no.
 - **Orfandad operativa**: el proyecto está `Activo` pero no tiene ninguna tarea abierta — señal distinta de la anterior porque mira los hechos (tareas), no el texto declarado.
 
-Estos cuatro campos **no se guardan a mano**: se recalculan en cada consulta a partir de los datos vivos (fechas, bloqueos, tareas), para que nunca queden desincronizados de la realidad.
+Ninguno de estos campos se guarda **a mano** — pero sí se guardan de verdad, en columnas reales de la tabla `projects` (`health`, `priority_score`, `priority_bucket`, `priority_breakdown`, `priority_computed_at`). Se recalculan y se graban en cada mutación que pueda afectarlos (alta/edición de proyecto, alta/cambio/borrado de tarea) y también en cada carga del dashboard, para que ni siquiera el simple paso del tiempo los deje desactualizados. Se puede verificar directamente en SQLite sin pasar por la webapp — apenas se corre `import_dataset.py`, los 27 proyectos ya tienen su prioridad calculada y persistida:
+
+```bash
+python3 -c "
+import sys; sys.path.insert(0, 'execution')
+import db
+conn = db.get_conn()
+p = db.get_project(conn, 'PRJ-01')
+print(p['health'], p['priority_score'], p['priority_bucket'], p['priority_computed_at'])
+"
+```
+
+## Dashboard ejecutivo (`/dashboard`)
+
+Página aparte de la vista operativa, pensada para responder rápido — con evidencia clickeable, no solo un número suelto:
+
+- **Salud del portafolio**: donut (Bloqueado/En riesgo/Sano), cada gajo lleva a esos proyectos filtrados en `/`.
+- **Top proyectos en riesgo**: ranking por Índice de Tensión.
+- **Carga por persona**: quién tiene más atraso relativo al resto del equipo (misma función que `/equipo`, reutilizada, no una copia).
+- **Evidencia — higiene operativa**: por persona, % de sus proyectos con siguiente paso definido vs. % de sus tareas abiertas vencidas, mostradas por separado (no mezcladas en un solo índice) para poder distinguir "tiene un buen proceso" de "le tocó una carga más fácil", con una nota de metodología visible en la página.
+- **Tareas que están frenando a otras**: ranking de "efecto dominó".
+
+Tiene un filtro por responsable ("Enfocar en: ...") que reduce las cinco secciones a una sola persona a la vez, y aplica al instante (ver abajo).
+
+## Filtros instantáneos, sin recargar la página
+
+Los filtros de `/` y `/dashboard` aplican al instante: un único script vanilla (`static/live-filters.js`, sin frameworks ni build step) intercepta el formulario y los links de las tarjetas KPI, pide la misma URL con la nueva query string, y reemplaza solo los bloques necesarios del DOM con lo que el servidor devolvió. Si JS falla o está desactivado, los filtros se degradan a un GET normal (recarga completa) — siguen funcionando igual, solo sin la parte instantánea.
 
 ## Vista de equipo (`/equipo`)
 
@@ -92,7 +118,8 @@ Dentro de la cola de cada persona, las tareas de las que **dependen otras tareas
 - **Edición de tareas más allá de estado** (título, prioridad, fecha, responsable) desde la UI una vez creadas — el responsable solo se fija al crear la tarea; cambiarlo después requiere re-importar o editar directamente en SQLite. No era crítico para demostrar el criterio de priorización. (Sí se puede crear, cambiar de estado y **eliminar** tareas y proyectos desde la UI.)
 - **Historial de cambios de proyecto** (sí existe para notas, no para el resto de campos) — un log de auditoría completo es razonable en producción, pero no esencial para el prototipo.
 - **Conversión de moneda en vivo**: se usa una tasa fija documentada (`COP_TO_USD = 1/4000`) en vez de una API de tipo de cambio, para mantener el motor de prioridad 100% determinista y sin dependencias externas.
-- **Un campo de prioridad editable a mano**: se decidió que la prioridad sea siempre calculada, nunca una opinión guardada a mano — así el criterio de priorización queda consistente en todo el portafolio. Esto satisface el requisito de "guardar prioridad" del reto de una forma distinta a un campo editable: la prioridad está siempre disponible y actualizada porque se recalcula en cada consulta, no porque alguien la haya tecleado y pueda quedar desactualizada. Se puede ajustar el peso de sus factores en `risk_engine.py` si el negocio lo requiere.
+- **Un campo de prioridad editable a mano**: se decidió que la prioridad se calcule siempre igual para todo el portafolio (no una opinión tecleada por cada quien), y que ese cálculo se persista automáticamente en cada mutación relevante — ver "Qué detecta el sistema automáticamente" más arriba para el detalle de cómo se guarda. Se puede ajustar el peso de sus factores en `risk_engine.py` si el negocio lo requiere.
+- **Evidencia de buenas prácticas como serie histórica**: el dashboard ejecutivo compara higiene operativa por persona sobre el estado *actual* del portafolio, no sobre cuánto tardó cada quien en cada tarea — el dataset no tiene esos timestamps. Es una correlación observada, documentada como tal en la propia página, no una afirmación de causalidad.
 - **Stack Next.js/React + mock en JSON + automatización con n8n**: se evaluó como alternativa y se descartó a propósito. Habría significado reescribir un prototipo ya probado end-to-end sin ganar precisión de negocio real, y se aleja de mantener la lógica de riesgo/prioridad en un único lugar determinista y testeable (`risk_engine.py`). Las ideas de negocio de valor de esa alternativa sí se incorporaron sobre el stack actual (ver "Orfandad operativa" y "Vista de equipo" arriba).
 
 ## Notas sobre la calidad de los datos importados

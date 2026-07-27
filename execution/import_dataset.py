@@ -13,6 +13,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 import db  # noqa: E402
+import risk_engine  # noqa: E402
 
 SEED_DIR = Path(__file__).parent.parent / "seed_data"
 
@@ -183,14 +184,28 @@ def seed_synthetic_examples(conn):
         db.upsert_task(conn, t)
 
 
+def refresh_all_diagnoses(conn):
+    """Calcula y graba salud/prioridad para cada proyecto (ver
+    webapp.py::refresh_diagnosis). No es opcional: sin esto, un proyecto
+    recién importado quedaría con priority_score/health en NULL hasta que
+    alguien lo abriera en la webapp."""
+    today = date.today()
+    for p in db.list_projects(conn):
+        tasks = db.list_tasks(conn, p["project_code"])
+        diag = risk_engine.diagnose(p, tasks, today)
+        db.update_priority_snapshot(conn, p["project_code"], diag)
+
+
 def main():
     conn = reset_db()
     import_team(conn)
     n_projects, n_tasks = import_projects_and_tasks(conn)
     seed_synthetic_examples(conn)
+    refresh_all_diagnoses(conn)
     conn.close()
     print(f"Importados {n_projects} proyectos y {n_tasks} tareas desde seed_data/.")
     print("Sembrados 5 proyectos sinteticos (SYN-01..05) con fechas relativas a hoy.")
+    print("Prioridad y salud calculadas y guardadas para todos los proyectos.")
     print(f"Base de datos lista en {db.DB_PATH}")
 
 

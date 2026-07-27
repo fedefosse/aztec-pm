@@ -26,6 +26,7 @@
     {% if diag.operationally_orphaned %}<span class="badge badge-warn">Activo sin tareas abiertas</span>{% endif %}
     <span class="badge badge-plain">{{ project.status }}</span>
   </div>
+  <div class="muted computed-at">Prioridad y salud calculadas y guardadas: {{ diag.computed_at }}</div>
   <details class="breakdown">
     <summary>Ver desglose del Índice de Tensión</summary>
     <ul>
