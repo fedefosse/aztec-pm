@@ -14,26 +14,81 @@ Este proyecto sigue una arquitectura de 3 capas (ver `CLAUDE.md` en esta misma c
 
 ## Cómo levantarlo
 
-Requiere Python 3.9+ (usa `sqlite3` y `csv` de la librería estándar; la única dependencia externa es Flask).
+### Herramientas necesarias
+
+- **Python 3.9 o superior** — [python.org/downloads](https://www.python.org/downloads/). Verificar con `python3 --version` (Windows: `python --version`).
+- **pip** — viene incluido con Python. Verificar con `pip3 --version`.
+- **git** — para clonar el repo. Verificar con `git --version`.
+
+No hace falta nada más: no hay Node/npm, no hay build step, no hay base de datos externa que instalar (SQLite viene incluido en Python). La única dependencia de terceros es Flask, instalada en el paso 3.
+
+### Paso a paso
+
+**1. Clonar el repositorio**
 
 ```bash
+git clone https://github.com/fedefosse/aztec-pm.git
 cd aztec-pm
-python3 -m venv .venv && source .venv/bin/activate   # opcional pero recomendado
-pip install -r requirements.txt
-
-python3 execution/import_dataset.py    # crea execution/aztec_pm.db desde seed_data/
-python3 execution/webapp.py            # levanta el servidor en http://127.0.0.1:5050
 ```
 
-Abre `http://127.0.0.1:5050` — esa es la carga principal: el **dashboard ejecutivo**, con los 22 proyectos reales del dataset de Aztec más 5 proyectos sintéticos de ejemplo (ver más abajo por qué). La tabla operativa (para editar proyecto por proyecto) está en `http://127.0.0.1:5050/proyectos`.
+**2. Crear un entorno virtual** (opcional pero recomendado — aísla las dependencias de este proyecto del resto de tu sistema)
 
-`import_dataset.py` reinicializa la base de datos por completo cada vez que se corre (útil en desarrollo/demo; ver advertencia en la directiva sobre no correrlo en producción sobre datos vivos).
+macOS/Linux:
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
 
-Por defecto el servidor corre sin el debugger de Flask (no es seguro dejarlo activo por defecto en un repo público), y solo escucha en `127.0.0.1`. Las rutas de eliminar no llevan token CSRF — aceptable para un prototipo local de un solo usuario, pero evita navegar sitios no confiables mientras el servidor esté corriendo en la misma máquina. Para desarrollo con recarga automática y depurador interactivo:
+Windows (PowerShell):
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+```
+
+**3. Instalar dependencias**
 
 ```bash
-AZTEC_PM_DEBUG=1 python3 execution/webapp.py
+pip install -r requirements.txt
 ```
+
+**4. Cargar los datos** (crea `execution/aztec_pm.db` desde `seed_data/`). Se corre **una sola vez** al principio — no hace falta repetirlo cada vez que levantás el servidor, solo si querés resetear todo a los datos originales:
+
+```bash
+python3 execution/import_dataset.py
+```
+
+**5. Levantar el servidor**
+
+```bash
+python3 execution/webapp.py
+```
+
+Deberías ver algo como `Running on http://127.0.0.1:5050`. Abrí esa URL en el navegador — esa es la carga principal: el **dashboard ejecutivo**, con los 22 proyectos reales del dataset de Aztec más 5 proyectos sintéticos de ejemplo (ver más abajo por qué). La tabla operativa (para editar proyecto por proyecto) está en `http://127.0.0.1:5050/proyectos`.
+
+Para detener el servidor: `Ctrl+C` en la terminal donde está corriendo.
+
+### Configuración (opcional)
+
+Por defecto el servidor corre sin el debugger de Flask (no es seguro dejarlo activo por defecto en un repo público), y solo escucha en `127.0.0.1`. Las rutas de eliminar no llevan token CSRF — aceptable para un prototipo local de un solo usuario, pero evita navegar sitios no confiables mientras el servidor esté corriendo en la misma máquina. Para desarrollo con recarga automática y depurador interactivo, activá la variable de entorno `AZTEC_PM_DEBUG`:
+
+```bash
+AZTEC_PM_DEBUG=1 python3 execution/webapp.py       # macOS/Linux
+```
+```powershell
+$env:AZTEC_PM_DEBUG="1"; python execution/webapp.py   # Windows PowerShell
+```
+
+No hay más variables de entorno ni archivos de configuración — no se necesitan claves de API ni credenciales de ningún tipo para correr este proyecto.
+
+### Solución de problemas
+
+| Problema | Causa probable / solución |
+|---|---|
+| `command not found: python3` | Instalar Python desde [python.org](https://www.python.org/downloads/) — en Windows usar `python` en vez de `python3` en todos los comandos. |
+| `ModuleNotFoundError: No module named 'flask'` | No se corrió `pip install -r requirements.txt`, o se corrió fuera del entorno virtual activado. |
+| `Address already in use` / puerto 5050 ocupado | Otro proceso está usando ese puerto — cerrarlo, o editar el número de puerto en la última línea de `execution/webapp.py` (`app.run(..., port=5050)`). |
+| La página carga pero no hay proyectos | No se corrió `python3 execution/import_dataset.py` (paso 4). |
+| Cambios hechos en la UI (proyectos/tareas de prueba) y querés volver a empezar de cero | Correr de nuevo `python3 execution/import_dataset.py` — borra y reimporta todo desde `seed_data/`. |
 
 ### Rutas principales
 
